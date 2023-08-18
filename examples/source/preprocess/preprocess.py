@@ -106,7 +106,12 @@ def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], Non
 class preprocess:
 
     def __init__(self):
-        pass
+        self.hol_df = get_holiday_by_year(years = [])
+        self.time_group = {
+            'BK' : { 'start_time' :  0 }, # 모든 시간대의 비행기 모두 BK 에 입장 가능
+            'LN' : { 'start_time' : 11 }, # 11시 이후 비행기만 LN 대상에 포함 가능
+            'DN' : { 'start_time' : 17 }, # 17시 이후 비행기만 LN 대상에 포함 가능
+        }
 
     def logic(self):
         pass
@@ -148,17 +153,90 @@ class preprocess:
         return df
     
     def _drop_useless_date(self, df):
-        pass
+        dates = [
+            '20220513',
+            '20221002',
+            '20221003',
+            '20221104',
+            '20221105',
+            '20230111',
+            '20230112',
+            '20230113',
+            '20230114'
+        ]
+        # change to date type
+        # dates = []??
+        df = df[~df['std'].isin(dates)]
+
+        return df
 
     def _make_mr_features(self, df):
-        pass
+        df['MM'] = (df['ffp_ke'] == 'MM')
+        df['MP'] = (df['ffp_ke'] == 'MP')
+        df['MC'] = (df['ffp_ke'] == 'MC')
+
+        df['ELIP'] = (df['ffp_skyteam'] == 'ELIP')
+
+        isJC = df['bkg_cls'].isin(['J', 'C'])
+
+        isJCandAMEEUR = isJC & df['RGN_AMEEUR']
+        df['JC_AMEEUR'] = df.loc[isJCandAMEEUR, 'pax_count']
+
+        df['MM_PR'] = df.loc[df['MM'] & (df['cbn_cls'] == 'C'), 'pax_count'].astype('int16')
+        df['MP_PR'] = df.loc[df['MP'] & (df['cbn_cls'] == 'C'), 'pax_count'].astype('int16')
+
+        return df
 
     def _make_pr_features(self, df):
-        pass
+        df['EY_MM'] = df['MM'] & (df['cbn_cls'] == 'Y')
+        df['EY_MP'] = df['MP'] & (df['cbn_cls'] == 'Y')
+        df['EY_ELIP'] = (df['ffp_skyteam'] == 'ELIP') & (~df['MM']) & (~df['MP']) & (df['cbn_cls'] == 'Y')
+
+        for new_col in ['AMEEUR_Y_MC', 'SEA_Y_MC', 'CHNJPN_Y_MC', 'KOR_Y_MC', 'ETC_Y_MC']:
+            orgn_col = new_col[:-3]
+            df[new_col] = df.loc[df[orgn_col].astype(bool) & df['MC'], 'pax_count']
+
+        return df
 
     def _get_fr_dataset(self, df):
-        pass
+        # select fr columns
+        fr_cols = ['AMEEUR_F', 'lngf', 'calf', 'frdg','staff_bkg', 'group']
+        fr = pd.DataFrame(columns=fr_cols, dtype='int16')    
 
+        for group, time_gt in self.time_group.items():
+            # 임시 DataFrame 생성 : time group에 해당하는 것만 빼는 중
+            tmp_df = df[
+                df['std_hour'] >= time_gt['start_time']
+            ]
+            # tmp 중에서 확약 data만 추출
+            confirmed_df = tmp_df[
+                tmp_df['rsvn_code'] == 'HK'
+            ]
+
+            confirm_agg = confirmed_df.groupby('std').agg({
+                c : 'sum' for c in fr_cols
+            }).astype('int16')
+
+            staff_agg = tmp_df[
+                (tmp_df['rsvn_code'] == 'SA')
+                & (tmp_df['cbn_cls'] == 'F')
+            ].groupby('std').agg({
+                'pax_count' : sum
+            })
+
+            staff_agg = staff_agg.rename(columns={'pax_count':'staff_bkg'})
+
+            tmp_agg = confirm_agg.merge(staff_agg, on='std', how='left')
+            tmp_agg = tmp_agg.fillna(0).astype('int16')
+            tmp_agg['group'] = group
+
+            fr = pd.concat([fr, tmp_agg])
+
+        fr.index.name = 'std'
+        fr['is_holiday'] = fr.index.isin(self.hol_df.index).astype('int16')
+
+        return fr
+    
     def _get_mr_dataset(self, df):
         pass
 
