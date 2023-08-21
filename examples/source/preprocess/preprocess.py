@@ -33,7 +33,7 @@ def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
 
     '''
     # APIKEY 관련 호출 방안 처리 필요
-    HOLIDAY_API_KEY = unquote(os.environ['HOLIDAY_API_KEY'])
+    HOLIDAY_API_KEY = 'tfL4n7XV90fA7+tbWFGqShE/JokqLQxd+0I89UfkMmTYxqXPR2nmWCeAr957kAtDh2U1BNq3fh2m3S0kc9fPUA=='
     url = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getHoliDeInfo'
     params ={
         'serviceKey' : HOLIDAY_API_KEY,
@@ -244,4 +244,4 @@ class preprocess:
         pass
 
 if __name__=='__main__':
-    pass
+    print(get_holiday_by_year(year=2021))
