@@ -200,8 +200,9 @@ class preprocess:
 
     def _get_fr_dataset(self, df):
         # select fr columns
-        fr_cols = ['AMEEUR_F', 'lngf', 'calf', 'frdg','staff_bkg', 'group']
-        fr = pd.DataFrame(columns=fr_cols, dtype='int16')    
+        agg_cols = ['AMEEUR_F', 'lngf', 'calf', 'frdg']
+        not_agg_cols = ['staff_bkg', 'group']
+        fr = pd.DataFrame(columns=agg_cols+not_agg_cols, dtype='int16')    
 
         for group, time_gt in self.time_group.items():
             # 임시 DataFrame 생성 : time group에 해당하는 것만 빼는 중
@@ -214,7 +215,7 @@ class preprocess:
             ]
 
             confirm_agg = confirmed_df.groupby('std').agg({
-                c : 'sum' for c in fr_cols
+                c : 'sum' for c in agg_cols
             }).astype('int16')
 
             staff_agg = tmp_df[
@@ -238,10 +239,63 @@ class preprocess:
         return fr
     
     def _get_mr_dataset(self, df):
-        pass
+        # select mr columns
+        agg_cols = ['JC_AMEEUR', 'MM_PR', 'MP_PR', 'calm', 'lngm']
+        not_agg_cols = ['group']
+        mr = pd.DataFrame(columns=agg_cols+not_agg_cols, dtype='int16')
+
+        for group, time_gt in self.time_group.items():
+            tmp_df = df[df['std_hour'] >= time_gt['start_time']]
+            
+            confirmed_df = tmp_df[tmp_df['rsvn_code'] == 'HK']
+            confirm_agg = confirmed_df.groupby('std').agg({
+                c : 'sum' for c in agg_cols
+            }).astype('int16')
+            
+            confirm_agg['group'] = group
+            
+            mr = pd.concat([mr, confirm_agg])
+
+        mr.index.name = 'std'
+        mr['is_holiday'] = mr.index.isin(self.hol_df.index).astype('int16')
+
+        return mr
 
     def _get_pr_dataset(self, df):
-        pass
+        agg_cols = ['AMEEUR_C', 'SEA_C', 'CHNJPN_C', 'KOR_C', 'ETC_C',
+                'EY_MM', 'EY_MP', 'EY_ELIP',
+                'AMEEUR_Y_MC', 'SEA_Y_MC', 'CHNJPN_Y_MC', 'KOR_Y_MC', 'ETC_Y_MC', 
+                'AMEEUR_Y', 'SEA_Y', 'CHNJPN_Y', 'KOR_Y', 'ETC_Y', 
+                'calp', 'hdcp', 'lngp', 'prdg', 'sss']
+
+        not_agg_cols = ['stfd','group']
+
+        pr = pd.DataFrame(columns=agg_cols+not_agg_cols, dtype='int16')
+
+        for group, time_gt in self.time_group.items():
+            tmp_df = df[
+                df['std_hour'] >= time_gt['start_time']
+            ]
+            
+            confirmed_df = tmp_df[tmp_df['rsvn_code'] == 'HK']
+            confirm_agg = confirmed_df.groupby('std').agg({
+                c : 'sum' for c in agg_cols
+            }).astype('int16')
+            
+            staff_agg = tmp_df[
+                tmp_df['cbn_cls'] != 'F'
+            ].groupby('std').agg({
+                'stfd' : 'sum'
+            })
+            
+            tmp_agg = confirm_agg.merge(staff_agg, on='std', how='left')
+            tmp_agg = tmp_agg.fillna(0).astype('int16')
+            tmp_agg['group'] = group
+            
+            pr = pd.concat([pr, tmp_agg])
+
+        pr.index.name = 'std'
+        pr['is_holiday'] = pr.index.isin(self.hol_df.index).astype('int16')
 
 if __name__=='__main__':
-    print(get_holiday_by_year(year=2021))
+    pass
