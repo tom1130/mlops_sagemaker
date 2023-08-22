@@ -10,10 +10,6 @@ import numpy as np
 from bs4 import BeautifulSoup
 from urllib.parse import unquote
 
-def arg_parse():
-    pass
-
-
 def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
     '''
     한국천문연구원에서 휴일 정보를 호출한 후, 받아온 정보를 정제하는 함수
@@ -32,7 +28,7 @@ def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
 
     '''
-    # APIKEY 관련 호출 방안 처리 필요
+    # APIKEY 관련 호출 방안 처리 필요 -> config 처리 예정
     HOLIDAY_API_KEY = 'tfL4n7XV90fA7+tbWFGqShE/JokqLQxd+0I89UfkMmTYxqXPR2nmWCeAr957kAtDh2U1BNq3fh2m3S0kc9fPUA=='
     url = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getHoliDeInfo'
     params ={
@@ -103,16 +99,48 @@ def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], Non
     hol_info = hol_info.set_index('hol_date')
     return hol_info
 
-class preprocess:
+class Preprocess:
 
-    def __init__(self):
-        self.hol_df = get_holiday_by_year(years = [])
+    def __init__(self, args):
+        self.args = args
+        self.hol_df = get_holiday_by_year(years = args.listYears)
         self.time_group = {
             'BK' : { 'start_time' :  0 }, # 모든 시간대의 비행기 모두 BK 에 입장 가능
             'LN' : { 'start_time' : 11 }, # 11시 이후 비행기만 LN 대상에 포함 가능
             'DN' : { 'start_time' : 17 }, # 17시 이후 비행기만 LN 대상에 포함 가능
         }
 
+        self.svc_columns = ['calf', 'calm', 'calp', 'hdcp', 'lngf', 'lngm', 'lngp', 'lngw', 'frdg', 'prdg', 'stfd', 'sss']
+        self.bkg_cls_to_cbn_cls_dict = {
+            'P' : 'F',
+            'F' : 'F',
+            'A' : 'F',
+
+            'J' : 'C',
+            'C' : 'C',
+            'D' : 'C',
+            'I' : 'C',
+            'R' : 'C',
+            'Z' : 'C',
+            'O' : 'C',
+
+            'W' : 'Y',
+            'Y' : 'Y',
+            'B' : 'Y',
+            'M' : 'Y',
+            'S' : 'Y',
+            'H' : 'Y',
+            'E' : 'Y',
+            'K' : 'Y',
+            'L' : 'Y',
+            'U' : 'Y',
+            'Q' : 'Y',
+            'G' : 'Y',
+            'N' : 'Y',
+            'T' : 'Y',
+            'X' : 'Y',
+            'V' : 'Y'
+        }
     def logic(self):
         pass
 
@@ -120,10 +148,15 @@ class preprocess:
         pass
     
     def _read_data(self):
-        df = pd.read_csv('args')
+        # 
+        df = pd.read_csv(os.path.join(self.args.strDataPath, self.args.strDataName))
         return df
+    
+    def _read_label(self):
+        label = pd.read_csv(os.path.join(self.args.strDataPath, self.args.strLabelName))
+        return label
 
-    def _(self, df):
+    def _transform_base_data(self, df):
         '''
         1. na 값 치환
             - svc keyword 컬럼 na 값 치환
@@ -132,11 +165,14 @@ class preprocess:
         3. 지역 구분
         '''
         # svc keyword 컬럼 na -> 0
-        df['args'] = df['args'].fillna(0)
+        df[self.svc_columns] = df[self.svc_columns].fillna(0)
         
         # cbn_cls na -> bkg_cls로 치환
-        cbn_cls_mask = df['bkg_cls'].map('args')
+        cbn_cls_mask = df['bkg_cls'].map(self.bkg_cls_to_cbn_cls_dict)
         df.loc[:, 'cbn_cls'] = df['cbn_cls'].apply(lambda x: np.NaN if x=='~' else x).fillna(cbn_cls_mask)
+
+        # date 형식 지정
+        df['std'] = pd.to_datetime(df['std']).dt.date
 
         # 지역구분 정리 : AME-EUR, CHN-JPN, SEA, KOR, ETC
         df['RGN_AMEEUR'] = df['arr_rgn'].isin(['AME', 'EUR'])
@@ -149,6 +185,10 @@ class preprocess:
             for rgn in ['RGN_AMEEUR', 'RGN_SEA', 'RGN_CHNJPN', 'RGN_KOR', 'RGN_ETC']:
                 col_name = rgn[4:] + '_' + cls
                 df[col_name] = df.loc[((df['cbn_cls'] == cls) & df[rgn]), 'pax_count'].astype('int16')
+        
+        df['MM'] = (df['ffp_ke'] == 'MM')
+        df['MP'] = (df['ffp_ke'] == 'MP')
+        df['MC'] = (df['ffp_ke'] == 'MC')
 
         return df
     
@@ -171,10 +211,6 @@ class preprocess:
         return df
 
     def _make_mr_features(self, df):
-        df['MM'] = (df['ffp_ke'] == 'MM')
-        df['MP'] = (df['ffp_ke'] == 'MP')
-        df['MC'] = (df['ffp_ke'] == 'MC')
-
         df['ELIP'] = (df['ffp_skyteam'] == 'ELIP')
 
         isJC = df['bkg_cls'].isin(['J', 'C'])
@@ -235,6 +271,7 @@ class preprocess:
 
         fr.index.name = 'std'
         fr['is_holiday'] = fr.index.isin(self.hol_df.index).astype('int16')
+        fr = fr.reset_index()
 
         return fr
     
@@ -258,6 +295,7 @@ class preprocess:
 
         mr.index.name = 'std'
         mr['is_holiday'] = mr.index.isin(self.hol_df.index).astype('int16')
+        mr = mr.reset_index()
 
         return mr
 
@@ -296,6 +334,21 @@ class preprocess:
 
         pr.index.name = 'std'
         pr['is_holiday'] = pr.index.isin(self.hol_df.index).astype('int16')
+        pr = pr.reset_index()
+
+        return pr
+    
+    def train_test_split(self, df):
+        max_date = df['std'].max()
+
+
 
 if __name__=='__main__':
-    pass
+    parser = argparse.ArgumentParser(description='preprocessing')
+
+    parser.add_argument('--strDataPath', default='data/')
+    parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
+    parser.add_argument('--strLabelName', default='lng_agg_data.csv')
+
+    args = parser.parse_args()
+    print(args)
