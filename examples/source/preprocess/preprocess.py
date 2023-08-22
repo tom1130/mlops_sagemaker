@@ -51,7 +51,7 @@ def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
         tmp_df = pd.DataFrame(tmp_list)
         hol_df = pd.concat([hol_df, tmp_df])
     # except:
-    #     return hol_df
+        # return hol_df
 
     return hol_df
 
@@ -83,19 +83,23 @@ def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], Non
         raise ValueError
     
     hol_info = pd.DataFrame(columns=['hol_date', 'hol_name'])
-    
-    # year 지정시
-    if isinstance(year, int):
-        for month in range(1, 13):
-            hol_info = _get_holiday_info(year, month, hol_info)
-        hol_info = hol_info.set_index('hol_date')
-        return hol_info
 
-    # years 지정시
-    for y in years:
-        for month in range(1, 13):
-            hol_info = _get_holiday_info(y, month, hol_info)
+    try:
+        # year 지정시
+        if isinstance(year, int):
+            for month in range(1, 13):
+                hol_info = _get_holiday_info(year, month, hol_info)
+            hol_info = hol_info.set_index('hol_date')
+            return hol_info
 
+        # years 지정시
+        for y in years:
+            for month in range(1, 13):
+                hol_info = _get_holiday_info(y, month, hol_info)
+    except:
+        print('Connection Error')
+        hol_info = pd.read_csv('c:\\Users\\GIHO\\Desktop\\DS\\KE_lounge\\mlops_sagemaker\\examples\\data\\raw\\holiday.csv')
+    hol_info['hol_date'] = pd.to_datetime(hol_info['hol_date']).dt.date
     hol_info = hol_info.set_index('hol_date')
     return hol_info
 
@@ -154,7 +158,20 @@ class Preprocess:
     
     def _read_label(self):
         label = pd.read_csv(os.path.join(self.args.strDataPath, self.args.strLabelName))
-        return label
+        
+        label['std'] = pd.to_datetime(label['_date']).dt.date
+        
+        label['FR_LNG'] = label.loc[(label['lng_type'] == 'FR'), 'ke'].astype('int16')
+        label['MR_LNG'] = label.loc[(label['lng_type'] == 'MR'), 'ke'].astype('int16')
+        label['PR_LNG'] = label.loc[(label['lng_type'] == 'PR'), 'ke'].astype('int16')
+
+        label_agg = label.groupby(['time_group', 'std']).agg({
+            c : 'sum' for c in ['FR_LNG', 'MR_LNG', 'PR_LNG']
+        }).astype('int16').reset_index().set_index('std')
+
+        label_agg.index.name = 'std'
+        label_agg = label_agg.rename(columns = {'time_group' : 'group'})
+        return label_agg
 
     def _transform_base_data(self, df):
         '''
@@ -338,14 +355,23 @@ class Preprocess:
 
         return pr
     
+    def _merge_data_label(self, df, label):
+        df_cols = df.columns.tolist()
+
+        df = df.merge(label, on=['std','group'], how='inner')
+        df = df[df_cols+[f'{self.args.strLoungeName}_LNG']]
+        df = df.rename(columns={f'{self.args.strLoungeName}_LNG' : 'target'})
+
+        return df
+
     def train_test_split(self, df):
         max_date = df['std'].max()
 
 
-
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='preprocessing')
+    parser = argparse.ArgumentParser(description='pr_preprocessing')
 
+    parser.add_argument('--strLoungeName', default='PR')
     parser.add_argument('--strDataPath', default='data/')
     parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
     parser.add_argument('--strLabelName', default='lng_agg_data.csv')
