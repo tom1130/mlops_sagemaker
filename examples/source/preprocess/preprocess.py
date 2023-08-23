@@ -4,6 +4,7 @@ import datetime
 import argparse
 import requests
 from typing import List, Union
+from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 import numpy as np
@@ -98,7 +99,8 @@ def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], Non
                 hol_info = _get_holiday_info(y, month, hol_info)
     except:
         print('Connection Error')
-        hol_info = pd.read_csv('c:\\Users\\GIHO\\Desktop\\DS\\KE_lounge\\mlops_sagemaker\\examples\\data\\raw\\holiday.csv')
+    #     hol_info = pd.read_csv('c:\\Users\\GIHO\\Desktop\\DS\\KE_lounge\\mlops_sagemaker\\examples\\data\\raw\\holiday.csv')
+        hol_info = pd.read_csv('c://Users/고기호/Desktop/vscode/mlops/examples/data/raw/holiday.csv')
     hol_info['hol_date'] = pd.to_datetime(hol_info['hol_date']).dt.date
     hol_info = hol_info.set_index('hol_date')
     return hol_info
@@ -364,17 +366,16 @@ class Preprocess:
 
         return df
 
-    def train_test_split(self, df):
+    def _train_test_split(self, df):
         max_date = df['std'].max()
+        valid_date = max_date - relativedelta(months=2)
+        test_date = max_date - relativedelta(months=1)
 
+        train = df[df['std']<valid_date]
+        validation = df[(df['std']>=valid_date)&(df['std']<test_date)]
+        test = df[df['std']>=test_date]
+
+        return train, validation, test
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='pr_preprocessing')
-
-    parser.add_argument('--strLoungeName', default='PR')
-    parser.add_argument('--strDataPath', default='data/')
-    parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
-    parser.add_argument('--strLabelName', default='lng_agg_data.csv')
-
-    args = parser.parse_args()
-    print(args)
+    pass
