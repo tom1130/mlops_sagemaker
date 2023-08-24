@@ -56,7 +56,7 @@ def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
 
     return hol_df
 
-def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], None] = None) -> pd.DataFrame:
+def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], None] = None, hol_path:str = None) -> pd.DataFrame:
     '''
     특정 연도의 휴일을 pd.DataFrame으로 반환하는 함수
     
@@ -98,9 +98,8 @@ def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], Non
             for month in range(1, 13):
                 hol_info = _get_holiday_info(y, month, hol_info)
     except:
-        print('Connection Error')
-    #     hol_info = pd.read_csv('c:\\Users\\GIHO\\Desktop\\DS\\KE_lounge\\mlops_sagemaker\\examples\\data\\raw\\holiday.csv')
-        hol_info = pd.read_csv('c://Users/고기호/Desktop/vscode/mlops/examples/data/raw/holiday.csv')
+        print('API Connection Error')
+        hol_info = pd.read_csv(hol_path)
     hol_info['hol_date'] = pd.to_datetime(hol_info['hol_date']).dt.date
     hol_info = hol_info.set_index('hol_date')
     return hol_info
@@ -109,15 +108,49 @@ class Preprocess:
 
     def __init__(self, args):
         self.args = args
-        self.hol_df = get_holiday_by_year(years = args.listYears)
+        self.hol_df = get_holiday_by_year(years = args.listYears,
+                                          hol_path = os.path.join(self.args.strDataPath, 'etc', self.args.strHoliday))
         self.time_group = {
             'BK' : { 'start_time' :  0 }, # 모든 시간대의 비행기 모두 BK 에 입장 가능
             'LN' : { 'start_time' : 11 }, # 11시 이후 비행기만 LN 대상에 포함 가능
             'DN' : { 'start_time' : 17 }, # 17시 이후 비행기만 LN 대상에 포함 가능
         }
 
-        self.svc_columns = ['calf', 'calm', 'calp', 'hdcp', 'lngf', 'lngm', 'lngp', 'lngw', 'frdg', 'prdg', 'stfd', 'sss']
-        self.bkg_cls_to_cbn_cls_dict = {
+    def logic(self):
+        pass
+
+    def execution(self):
+        pass
+        
+    def _preprocess_label(self, df):
+        df['std'] = pd.to_datetime(df['_date']).dt.date
+        
+        df['FR_LNG'] = df.loc[(df['lng_type'] == 'FR'), 'ke'].astype('int16')
+        df['MR_LNG'] = df.loc[(df['lng_type'] == 'MR'), 'ke'].astype('int16')
+        df['PR_LNG'] = df.loc[(df['lng_type'] == 'PR'), 'ke'].astype('int16')
+
+        df_agg = df.groupby(['time_group', 'std']).agg({
+            c : 'sum' for c in ['FR_LNG', 'MR_LNG', 'PR_LNG']
+        }).astype('int16').reset_index().set_index('std')
+
+        df_agg.index.name = 'std'
+        df_agg = df_agg.rename(columns = {'time_group' : 'group'})
+        return df_agg
+        
+    def _transform_base_data(self, df):
+        '''
+        1. na 값 치환
+            - svc keyword 컬럼 na 값 치환
+            - cbn_cls 컬럼 na 값 치환
+        2. date 형식 지정
+        3. 지역 구분
+        '''
+        # svc keyword 컬럼 na -> 0
+        svc_columns = ['calf', 'calm', 'calp', 'hdcp', 'lngf', 'lngm', 'lngp', 'lngw', 'frdg', 'prdg', 'stfd', 'sss']
+        df[svc_columns] = df[svc_columns].fillna(0)
+        
+        # cbn_cls na -> bkg_cls로 치환
+        bkg_cls_to_cbn_cls_dict = {
             'P' : 'F',
             'F' : 'F',
             'A' : 'F',
@@ -147,47 +180,7 @@ class Preprocess:
             'X' : 'Y',
             'V' : 'Y'
         }
-    def logic(self):
-        pass
-
-    def execution(self):
-        pass
-    
-    def _read_data(self):
-        # 
-        df = pd.read_csv(os.path.join(self.args.strDataPath, self.args.strDataName))
-        return df
-    
-    def _read_label(self):
-        label = pd.read_csv(os.path.join(self.args.strDataPath, self.args.strLabelName))
-        
-        label['std'] = pd.to_datetime(label['_date']).dt.date
-        
-        label['FR_LNG'] = label.loc[(label['lng_type'] == 'FR'), 'ke'].astype('int16')
-        label['MR_LNG'] = label.loc[(label['lng_type'] == 'MR'), 'ke'].astype('int16')
-        label['PR_LNG'] = label.loc[(label['lng_type'] == 'PR'), 'ke'].astype('int16')
-
-        label_agg = label.groupby(['time_group', 'std']).agg({
-            c : 'sum' for c in ['FR_LNG', 'MR_LNG', 'PR_LNG']
-        }).astype('int16').reset_index().set_index('std')
-
-        label_agg.index.name = 'std'
-        label_agg = label_agg.rename(columns = {'time_group' : 'group'})
-        return label_agg
-
-    def _transform_base_data(self, df):
-        '''
-        1. na 값 치환
-            - svc keyword 컬럼 na 값 치환
-            - cbn_cls 컬럼 na 값 치환
-        2. date 형식 지정
-        3. 지역 구분
-        '''
-        # svc keyword 컬럼 na -> 0
-        df[self.svc_columns] = df[self.svc_columns].fillna(0)
-        
-        # cbn_cls na -> bkg_cls로 치환
-        cbn_cls_mask = df['bkg_cls'].map(self.bkg_cls_to_cbn_cls_dict)
+        cbn_cls_mask = df['bkg_cls'].map(bkg_cls_to_cbn_cls_dict)
         df.loc[:, 'cbn_cls'] = df['cbn_cls'].apply(lambda x: np.NaN if x=='~' else x).fillna(cbn_cls_mask)
 
         # date 형식 지정
