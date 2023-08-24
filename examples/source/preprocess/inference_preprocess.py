@@ -6,7 +6,26 @@ from datetime import datetime
 import pandas as pd
 
 from preprocess import Preprocess
+'''
+processing input
+1. today 설정 -> strptime으로 변경
+2. input
+    (1) input : strDatapath(integration)
+        destination : prefix/integrate/
+    (2) input : strDatapath/today
+        destination : prefix/today/input
+    (3) input : strDatapath/yesterday
+        destination : prefix/yesterday/input
+    (4) input : strdatapath/etc
+        destination : prefix/etc
+3. output
+    (1) input : strDataPath, output
+        destination : prefix/inference/today
+    (2) input : strDataPath, integrate
+        destination : prefix/train/raw
 
+processing output
+'''
 class inference_preprocess(Preprocess):
 
     def __init__(self, args):
@@ -30,9 +49,9 @@ class inference_preprocess(Preprocess):
         mr = self._get_mr_dataset(mr)
 
         # save data
-        fr_path = os.path.join(self.args.strDataPath, 'output','fr','lounge.csv')
-        mr_path = os.path.join(self.args.strDataPath, 'output','mr','lounge.csv')
-        pr_path = os.path.join(self.args.strDataPath, 'output', 'pr','lounge.csv')
+        fr_path = os.path.join(self.args.strDataPath, 'output','fr','pnr.csv')
+        mr_path = os.path.join(self.args.strDataPath, 'output','mr','pnr.csv')
+        pr_path = os.path.join(self.args.strDataPath, 'output', 'pr','pnr.csv')
         
         fr.to_csv(fr_path, index=False, header=False)
         mr.to_csv(mr_path, index=False, header=False)

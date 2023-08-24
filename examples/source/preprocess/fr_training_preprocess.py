@@ -24,9 +24,9 @@ class fr_training_preprocess(Preprocess):
         train, validation, test = self._train_test_split(df)        
 
         # save train, valid, test
-        train_path = os.path.join(self.args.strDataPath, 'output','train','lounge.csv')
-        validation_path = os.path.join(self.args.strDataPath, 'output','validation','lounge.csv')
-        test_path = os.path.join(self.args.strDataPath, 'output','test','lounge.csv')
+        train_path = os.path.join(self.args.strDataPath, 'output','train','pnr.csv')
+        validation_path = os.path.join(self.args.strDataPath, 'output','validation','pnr.csv')
+        test_path = os.path.join(self.args.strDataPath, 'output','test','pnr.csv')
         train.to_csv(train_path, index=False)
         validation.to_csv(validation_path, index=False)
         test.to_csv(test_path, index=False)
@@ -47,8 +47,8 @@ if __name__=='__main__':
     if AWS_yn:
         parser.add_argument('--strLoungeName', default='FR')
         parser.add_argument('--strDataPath', default='/opt/ml/processing')
-        parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
-        parser.add_argument('--strLabelName', default='lng_agg_data.csv')
+        parser.add_argument('--strDataName', default='pnr.csv')
+        parser.add_argument('--strLabelName', default='lounge.csv')
         parser.add_argument('--strHoliday', default='holiday.csv')
         parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
     
