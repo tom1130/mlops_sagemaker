@@ -6,32 +6,11 @@ from datetime import datetime
 import pandas as pd
 
 from preprocess import Preprocess
-'''
-processing input
-1. today 설정 -> strptime으로 변경
-2. input
-    (1) input : strDatapath(integration)
-        destination : prefix/integrate/
-    (2) input : strDatapath/today
-        destination : prefix/today/input
-    (3) input : strDatapath/yesterday
-        destination : prefix/yesterday/input
-    (4) input : strdatapath/etc
-        destination : prefix/etc
-3. output
-    (1) input : strDataPath, output
-        destination : prefix/inference/today
-    (2) input : strDataPath, integrate
-        destination : prefix/train/raw
 
-processing output
-'''
 class inference_preprocess(Preprocess):
 
     def __init__(self, args):
         super().__init__(args)
-        self.today = args.today_date
-        self.yesterday = datetime.strftime(datetime.strptime(args.today_date,'%Y%m%d')-datetime.timedelta(days=1),'%Y%m%d')
 
     def logic(self, df):
         # total process
@@ -49,17 +28,17 @@ class inference_preprocess(Preprocess):
         mr = self._get_mr_dataset(mr)
 
         # save data
-        fr_path = os.path.join(self.args.strDataPath, 'output','fr','pnr.csv')
-        mr_path = os.path.join(self.args.strDataPath, 'output','mr','pnr.csv')
-        pr_path = os.path.join(self.args.strDataPath, 'output', 'pr','pnr.csv')
+        fr_path = os.path.join(self.args.strDataPath, 'output','fr',self.args.strDataName)
+        mr_path = os.path.join(self.args.strDataPath, 'output','mr',self.args.strDataName)
+        pr_path = os.path.join(self.args.strDataPath, 'output','pr',self.args.strDataName)
         
         fr.to_csv(fr_path, index=False, header=False)
         mr.to_csv(mr_path, index=False, header=False)
         pr.to_csv(pr_path, index=False, header=False)
 
     def execution(self):
-        df = pd.read_csv(os.path.join(self.args.strDataPath,self.today,'input',self.args.strDataName))
-        label = pd.read_csv(os.path.join(self.args.strDataPath,self.yesterday,'input',self.args.strLabelName))
+        df = pd.read_csv(os.path.join(self.args.strDataPath,self.args.today,'input',self.args.strDataName))
+        label = pd.read_csv(os.path.join(self.args.strDataPath,self.args.yesterday,'input',self.args.strLabelName))
         
         self._integrate_data(df, label)
         self.logic(df)
@@ -67,7 +46,7 @@ class inference_preprocess(Preprocess):
     def _integrate_data(self, df, label):
         # read integrated data
         intg_df = pd.read_csv(os.path.join(self.args.strDataPath,'integrate',self.args.strDataName))
-        intg_label = pd.read_csv(os.path.join(self.args.strDataPath,'integrate', self.args.strDataName))
+        intg_label = pd.read_csv(os.path.join(self.args.strDataPath,'integrate', self.args.strLabelName))
         # str -> date
         intg_df['std'] = pd.to_datetime(intg_df['std']).dt.date
         intg_label['_date'] = pd.to_datetime(intg_label['_date']).dt.date
@@ -98,6 +77,7 @@ if __name__=='__main__':
         parser.add_argument('--strHoliday', default='holiday.csv')
         parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
         parser.add_argument('--today', type=str, default='20230725')
+        parser.add_argument('--yesterday', type=str, default='20230724')
     else:
         parser.add_argument('--strDataPath', default='c://Users/고기호/Desktop/vscode/mlops/examples/data/raw')
         parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
