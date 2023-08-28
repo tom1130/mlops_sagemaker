@@ -6,7 +6,6 @@ import pandas as pd
 from preprocess import Preprocess
 
 
-
 class mr_training_preprocess(Preprocess):
 
     def __init__(self, args):

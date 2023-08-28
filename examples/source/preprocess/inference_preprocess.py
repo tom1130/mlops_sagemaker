@@ -62,8 +62,8 @@ class inference_preprocess(Preprocess):
         intg_df = intg_df[intg_df['std']>=cut_date]
         intg_label = intg_label[intg_label['_date']>=cut_date]
         # save data
-        intg_df.to_csv(os.path.join(self.args.strDataPath,'output','integrate',self.args.strDataName))
-        intg_label.to_csv(os.path.join(self.args.strDataPath,'output','integrate',self.args.strLabelName))
+        intg_df.to_csv(os.path.join(self.args.strDataPath,'output','integrate',self.args.strDataName), index=False)
+        intg_label.to_csv(os.path.join(self.args.strDataPath,'output','integrate',self.args.strLabelName), index=False)
         
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='inference_preprocessing')
