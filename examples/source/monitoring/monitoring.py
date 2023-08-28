@@ -16,6 +16,8 @@ class monitoring:
         
     def logic(self):
         # label column = ['std','group','FR_LNG",'MR_LNG,PR_LNG]
+        self.df = self.df.merge(self.label, on=['std','group','lounge'], how='inner')
+        
         pass
 
     def execution(self):
@@ -49,16 +51,19 @@ class monitoring:
     def _preprocess_label(self, df):
         df['std'] = pd.to_datetime(df['_date']).dt.date
         
-        df['FR_LNG'] = df.loc[(df['lng_type'] == 'FR'), 'ke'].astype('int16')
-        df['MR_LNG'] = df.loc[(df['lng_type'] == 'MR'), 'ke'].astype('int16')
-        df['PR_LNG'] = df.loc[(df['lng_type'] == 'PR'), 'ke'].astype('int16')
+        df['FR'] = df.loc[(df['lng_type'] == 'FR'), 'ke'].astype('int16')
+        df['MR'] = df.loc[(df['lng_type'] == 'MR'), 'ke'].astype('int16')
+        df['PR'] = df.loc[(df['lng_type'] == 'PR'), 'ke'].astype('int16')
 
         df_agg = df.groupby(['time_group', 'std']).agg({
-            c : 'sum' for c in ['FR_LNG', 'MR_LNG', 'PR_LNG']
+            c : 'sum' for c in ['FR', 'MR', 'PR']
         }).astype('int16').reset_index().set_index('std')
 
         df_agg.index.name = 'std'
         df_agg = df_agg.rename(columns = {'time_group' : 'group'})
+
+        # melt 함수 사용
+
         return df_agg
     
 if __name__=='__main__':
