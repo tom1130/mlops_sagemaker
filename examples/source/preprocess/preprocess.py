@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup
 from urllib.parse import unquote
+from config.config import config_handler
 
 def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
     '''

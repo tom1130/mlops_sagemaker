@@ -49,7 +49,7 @@ class pipeline_monitoring:
         )
 
         step_args = monitoring_processor.run(
-            code='./preprocessing.py',
+            code='./monitoring.py',
             source_dir='./source/monitoring/',
             # git_config=self.git_config,
             inputs=[
@@ -101,13 +101,21 @@ class pipeline_monitoring:
         pipeline.upsert(role_arn=self.strExcutionRole)
         execution = pipeline.start()
 
+        print(execution.describe())
     
 if __name__=='__main__':
-    
+    # change directory path
+    strBasePath, strCurrentDir = os.path.dirname(os.path.abspath(__file__)), os.getcwd()
+    os.chdir(strBasePath)
+    # get config and argument
     parser = argparse.ArgumentParser()
     parser.add_argument('--today', default='20230725')
     args, _ = parser.parse_known_args()
     args.config = config_handler('monitoring_config.ini')
+
+    # execute monitoring pipeline
+    pipe_monitor = pipeline_monitoring(args)
+    pipe_monitor.execution()
 
 
 
