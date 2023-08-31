@@ -183,10 +183,92 @@ class pipeline_inference:
         print (type(self.fr_inference_process.properties))
         
     def _step_mr_inference(self):
-        pass
+        
+        pipeline_session = PipelineSession()
+
+        mr_model_grp_nm = self.args.config.get_value('MR-INFERENCING','model_package_group_name')
+        mr_model_arn = self._get_approved_latest_model_package_arn(mr_model_grp_nm)
+
+        model = ModelPackage(
+            model_package_arn=mr_model_arn,
+            role=self.strExcutionRole
+        )
+        
+        transformer = Transformer(
+            model_name='',
+            instance_type=self.args.config.get_value('MR-INFERENCING', 'instance_type'),
+            instance_count=self.args.config.get_value('MR-INFERENCING', 'instance_count', dtype='int'),
+            output_path=os.path.join(self.args.config.get_value('MR-INFERENCING','target_path'), self.args.today, 'mr'),
+            assemble_with='Line',
+            accept='text/csv',
+            sagemaker_session=pipeline_session
+        )
+
+        step_args = transformer.transform(
+            data=self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["mr-inference-data"].S3Output.S3Uri,
+            content_type='text/csv',
+            split_type='Line',
+            join_source="Input"
+        )
+
+        self.mr_inference_process = TransformStep(
+            name='MrInferenceProcess',
+            step_args=step_args
+        )
+
+        ## logging ##########
+        print("  \n== MR inference Step ==")
+        print("   \nArgs: ")
+        for key, value in self.mr_inference_process.arguments.items():
+            print("===========================")
+            print(f'key: {key}')
+            pprint(value)
+            
+        print (type(self.mr_inference_process.properties))
 
     def _step_pr_inference(self):
-        pass
+        
+        pipeline_session = PipelineSession()
+
+        mr_model_grp_nm = self.args.config.get_value('PR-INFERENCING','model_package_group_name')
+        mr_model_arn = self._get_approved_latest_model_package_arn(mr_model_grp_nm)
+
+        model = ModelPackage(
+            model_package_arn=mr_model_arn,
+            role=self.strExcutionRole
+        )
+        
+        transformer = Transformer(
+            model_name='',
+            instance_type=self.args.config.get_value('PR-INFERENCING', 'instance_type'),
+            instance_count=self.args.config.get_value('PR-INFERENCING', 'instance_count', dtype='int'),
+            output_path=os.path.join(self.args.config.get_value('PR-INFERENCING','target_path'), self.args.today, 'mr'),
+            assemble_with='Line',
+            accept='text/csv',
+            sagemaker_session=pipeline_session
+        )
+
+        step_args = transformer.transform(
+            data=self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["pr-inference-data"].S3Output.S3Uri,
+            content_type='text/csv',
+            split_type='Line',
+            join_source="Input"
+        )
+
+        self.pr_inference_process = TransformStep(
+            name='PrInferenceProcess',
+            step_args=step_args
+        )
+
+        ## logging ##########
+        print("  \n== PR inference Step ==")
+        print("   \nArgs: ")
+        for key, value in self.pr_inference_process.arguments.items():
+            print("===========================")
+            print(f'key: {key}')
+            pprint(value)
+            
+        print (type(self.pr_inference_process.properties))
 
     def _step_postprocess(self):
         
@@ -210,9 +292,19 @@ class pipeline_inference:
             source_dir='../source/postprocess/',
             inputs=[
                 ProcessingInput(
-                    input_name='input',
-                    source=os.path.join(strDataPath, self.args.today),
-                    destination=os.path.join(strPrefixPrep, 'input')
+                    input_name='fr-input',
+                    source=self.fr_inference_process.properties,
+                    destination=os.path.join(strPrefixPrep, 'input', 'fr')
+                ),
+                ProcessingInput(
+                    input_name='mr-input',
+                    source=self.mr_inference_process.properties,
+                    destination=os.path.join(strPrefixPrep, 'input', 'mr')
+                ),
+                ProcessingInput(
+                    input_name='pr-input',
+                    source=self.pr_inference_process.properties,
+                    destination=os.path.join(strPrefixPrep, 'input', 'pr')
                 )
             ],
             outputs=[
