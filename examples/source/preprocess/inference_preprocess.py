@@ -38,7 +38,7 @@ class inference_preprocess(Preprocess):
 
     def execution(self):
         df = pd.read_csv(os.path.join(self.args.strDataPath,self.args.today,'input',self.args.strDataName))
-        label = pd.read_csv(os.path.join(self.args.strDataPath,self.args.yesterday,'input',self.args.strLabelName))
+        label = pd.read_csv(os.path.join(self.args.strDataPath,self.args.today,'input',self.args.strLabelName))
         
         self._integrate_data(df, label)
         self.logic(df)
@@ -53,8 +53,10 @@ class inference_preprocess(Preprocess):
         
         df['std'] = pd.to_datetime(df['std']).dt.date
         label['_date'] = pd.to_datetime(label['_date']).dt.date
-        # concat 
+        # data concat 
         intg_df = pd.concat([intg_df, df[df['std']==df['std'].min()]])
+        # label erase and concat
+        intg_label = intg_label[~intg_label['_date'].isin(label['_date'].unique())]
         intg_label = pd.concat([intg_label, label])
         # cut data
         cut_date = intg_label['_date'].max() - relativedelta(months=30)
@@ -68,22 +70,12 @@ class inference_preprocess(Preprocess):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='inference_preprocessing')
 
-    AWS_yn = True
-
-    if AWS_yn:
-        parser.add_argument('--strDataPath', default='/opt/ml/processing')
-        parser.add_argument('--strDataName', default='pnr.csv')
-        parser.add_argument('--strLabelName', default='lounge.csv')
-        parser.add_argument('--strHoliday', default='holiday.csv')
-        parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
-        parser.add_argument('--today', type=str, default='20230725')
-        parser.add_argument('--yesterday', type=str, default='20230724')
-    else:
-        parser.add_argument('--strDataPath', default='c://Users/고기호/Desktop/vscode/mlops/examples/data/raw')
-        parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
-        parser.add_argument('--strLabelName', default='lng_agg_data.csv')
-        parser.add_argument('--strHoliday', default='holiday.csv')
-        parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
+    parser.add_argument('--strDataPath', default='/opt/ml/processing')
+    parser.add_argument('--strDataName', default='pnr.csv')
+    parser.add_argument('--strLabelName', default='lounge.csv')
+    parser.add_argument('--strHoliday', default='holiday.csv')
+    parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
+    parser.add_argument('--today', type=str, default='20230725')
     
     args = parser.parse_args()
     prep = inference_preprocess(args)

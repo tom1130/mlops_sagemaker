@@ -27,6 +27,10 @@ class Postprocess:
         # union
         self.result = pd.concat([self.fr_result, self.mr_result, self.pr_result])
 
+        # change column name
+        self.result.columns = ['date','time_group','pred','lounge_type']
+        self.result = self.result[['date','lounge_type','time_group','pred']]
+
         # save
         self.result.to_csv(os.path.join(self.args.strDataPath, 'output', 'pnr.csv'), index=False)
 

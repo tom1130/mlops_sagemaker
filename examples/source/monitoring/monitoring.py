@@ -14,18 +14,17 @@ class Monitoring:
         
         
     def logic(self):
-        # label column = ['std','group','lounge', 'label]
-        self.df = self.df.merge(self.label, on=['std','group','lounge'], how='inner')
+        self.df = self.df.merge(self.label, on=['date','time_group','lounge_type'], how='inner')
 
         # fr
-        fr = self.df[self.df['lounge']=='FR']
-        fr_r2 = r2_score(fr['predictions'], fr['label'])
+        fr = self.df[self.df['lounge_type']=='FR']
+        fr_r2 = r2_score(fr['pred'], fr['label'])
         # mr
-        mr = self.df[self.df['lounge']=='MR']
-        mr_r2 = r2_score(mr['predictions'], mr['label'])
+        mr = self.df[self.df['lounge_type']=='MR']
+        mr_r2 = r2_score(mr['pred'], mr['label'])
         # pr
-        pr = self.df[self.df['lounge']=='PR']
-        pr_r2 = r2_score(pr['predictions'], pr['label'])
+        pr = self.df[self.df['lounge_type']=='PR']
+        pr_r2 = r2_score(pr['pred'], pr['label'])
 
         report_dict = {
             "r2" :
@@ -63,7 +62,7 @@ class Monitoring:
         list_dir = os.listdir(os.path.join(self.args.strDataPath,'input','predictions'))
         min_date = self.min_date.replace('-','')
         max_date = self.max_date.replace('-','')
-        df = pd.DataFrame(columns=['std','group','predictions','lounge'])
+        df = pd.DataFrame(columns=['date','lounge_type','time_group','pred'])
 
         for dir in list_dir:
             if dir>=min_date and dir<max_date:
@@ -84,22 +83,21 @@ class Monitoring:
         self.label = self._preprocess_label(self.label)
 
     def _preprocess_label(self, df):
-        df['std'] = pd.to_datetime(df['_date']).dt.date
+        df['date'] = pd.to_datetime(df['_date']).dt.date
         
         df['FR'] = df.loc[(df['lng_type'] == 'FR'), 'ke'].astype('int16')
         df['MR'] = df.loc[(df['lng_type'] == 'MR'), 'ke'].astype('int16')
         df['PR'] = df.loc[(df['lng_type'] == 'PR'), 'ke'].astype('int16')
 
-        df_agg = df.groupby(['time_group', 'std']).agg({
+        df_agg = df.groupby(['time_group', 'date']).agg({
             c : 'sum' for c in ['FR', 'MR', 'PR']
         }).astype('int16').reset_index().set_index('std')
 
         df_agg.index.name = 'std'
-        df_agg = df_agg.rename(columns = {'time_group' : 'group'})
         
         df_agg = df_agg.reset_index()
         # unpivoting lounge column
-        df_agg = pd.melt(df_agg, id_vars=['std','group'], var_name='lounge', value_name='label')
+        df_agg = pd.melt(df_agg, id_vars=['date','group'], var_name='lounge_type', value_name='label')
         return df_agg
     
 if __name__=='__main__':
