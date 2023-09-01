@@ -20,13 +20,6 @@ class pipeline_inference:
         self._env_setting()
         self.sagemaker_client = boto3.client('sagemaker')
 
-        # get mr model arn
-        # mr_model_grp_nm = self.args.config.get_value('MR-INFERENCING','model_package_group_name')
-        # self.mr_model_arn = self._get_approved_latest_model_package_arn(mr_model_grp_nm)
-        # # get pr model arn
-        # pr_model_grp_nm = self.args.config.get_value('PR-INFERENCING','model_package_group_name')
-        # self.pr_model_arn = self._get_approved_latest_model_package_arn(pr_model_grp_nm)
-
     def _env_setting(self):
         
         self.strPrefix = self.args.config.get_value('COMMON','prefix')
@@ -195,7 +188,7 @@ class pipeline_inference:
         )
         
         transformer = Transformer(
-            model_name='',
+            model_name='mr-model-group-ex0827cns-2023-08-27-12-38-15-036',
             instance_type=self.args.config.get_value('MR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('MR-INFERENCING', 'instance_count', dtype='int'),
             output_path=os.path.join(self.args.config.get_value('MR-INFERENCING','target_path'), self.args.today, 'mr'),
@@ -239,7 +232,7 @@ class pipeline_inference:
         )
         
         transformer = Transformer(
-            model_name='',
+            model_name='pr-model-group-ex0827cns-2023-08-27-12-45-47-010',
             instance_type=self.args.config.get_value('PR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('PR-INFERENCING', 'instance_count', dtype='int'),
             output_path=os.path.join(self.args.config.get_value('PR-INFERENCING','target_path'), self.args.today, 'mr'),
@@ -293,17 +286,17 @@ class pipeline_inference:
             inputs=[
                 ProcessingInput(
                     input_name='fr-input',
-                    source=self.fr_inference_process.properties,
+                    source=self.fr_inference_process.properties.TransformOutput.S3OutputPath,
                     destination=os.path.join(strPrefixPrep, 'input', 'fr')
                 ),
                 ProcessingInput(
                     input_name='mr-input',
-                    source=self.mr_inference_process.properties,
+                    source=self.mr_inference_process.properties.TransformOutput.S3OutputPath,
                     destination=os.path.join(strPrefixPrep, 'input', 'mr')
                 ),
                 ProcessingInput(
                     input_name='pr-input',
-                    source=self.pr_inference_process.properties,
+                    source=self.pr_inference_process.properties.TransformOutput.S3OutputPath,
                     destination=os.path.join(strPrefixPrep, 'input', 'pr')
                 )
             ],
@@ -336,7 +329,7 @@ class pipeline_inference:
         
         pipeline = Pipeline(
             name=self.strPipelineName,
-            steps=[self.preprocessing_process, self.fr_inference_process, self.postprocessing_process],
+            steps=[self.preprocessing_process, self.fr_inference_process, self.mr_inference_process, self.pr_inference_process, self.postprocessing_process],
             sagemaker_session=self.pipeline_session
         )
         return pipeline
@@ -345,6 +338,8 @@ class pipeline_inference:
         
         self._step_preprocess()
         self._step_fr_inference()
+        self._step_mr_inference()
+        self._step_pr_inference()
         self._step_postprocess()
 
         pipeline = self._get_pipeline()

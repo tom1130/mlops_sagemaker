@@ -70,7 +70,7 @@ class Monitoring:
         for dir in list_dir:
             if dir>=min_date and dir<max_date:
                 prediction = pd.read_csv(os.path.join(self.args.strDataPath,'input','predictions',dir,self.args.strDataName))
-                prediction = prediction[prediction['std']==prediction['std'].min()]
+                prediction = prediction[prediction['date']==prediction['date'].min()]
                 df = pd.concat([df, prediction])
         self.df = df
 
@@ -95,7 +95,7 @@ class Monitoring:
         df_agg = df.groupby(['time_group', 'date']).agg({
 
             c : 'sum' for c in ['FR', 'MR', 'PR']
-        }).astype('int16').reset_index().set_index('std')
+        }).astype('int16').reset_index().set_index('date')
 
         df_agg.index.name = 'std'
         # melt 써서 컬럼 변경 진행

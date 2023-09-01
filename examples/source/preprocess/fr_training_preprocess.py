@@ -42,7 +42,6 @@ class fr_training_preprocess(Preprocess):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='fr_train_preprocessing')
 
-    parser.add_argument('--strLoungeName', default='FR')
     parser.add_argument('--strDataPath', default='/opt/ml/processing')
     parser.add_argument('--strDataName', default='pnr.csv')
     parser.add_argument('--strLabelName', default='lounge.csv')

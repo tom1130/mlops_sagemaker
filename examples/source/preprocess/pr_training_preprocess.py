@@ -5,19 +5,6 @@ import pandas as pd
 
 from preprocess import Preprocess
 
-'''
-processing input
-1. input
-    (1) input : strDatapath(integration)
-        destination : prefix/integrate/
-    (2) input : strdatapath/etc
-        destination : prefix/etc
-2. output
-    (1) input : strDataPath, output
-        destination : prefix/pr/
-
-processing output
-'''
 
 class pr_training_preprocess(Preprocess):
 
@@ -54,9 +41,10 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='pr_train_preprocessing')
 
     parser.add_argument('--strLoungeName', default='PR')
-    parser.add_argument('--strDataPath', default='c://Users/고기호/Desktop/vscode/mlops/examples/data/raw')
-    parser.add_argument('--strDataName', default='pnr_agg_data_20230815.csv')
-    parser.add_argument('--strLabelName', default='lng_agg_data.csv')
+    parser.add_argument('--strDataPath', default='/opt/ml/processing')
+    parser.add_argument('--strDataName', default='pnr.csv')
+    parser.add_argument('--strLabelName', default='lounge.csv')
+    parser.add_argument('--strHoliday', default='holiday.csv')
     parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
     
     args = parser.parse_args()
