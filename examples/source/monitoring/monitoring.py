@@ -59,8 +59,6 @@ class Monitoring:
 
         self.logic()
 
-        self.logic()
-
     def _read_predictions(self):
         list_dir = os.listdir(os.path.join(self.args.strDataPath,'input','predictions'))
         min_date = self.min_date.replace('-','')
@@ -86,7 +84,7 @@ class Monitoring:
         self.label = self._preprocess_label(self.label)
 
     def _preprocess_label(self, df):
-        df['date'] = pd.to_datetime(df['_date']).dt.date
+        df['date'] = df['_date']
         
         df['FR'] = df.loc[(df['lng_type'] == 'FR'), 'ke'].astype('int16')
         df['MR'] = df.loc[(df['lng_type'] == 'MR'), 'ke'].astype('int16')
@@ -96,13 +94,10 @@ class Monitoring:
 
             c : 'sum' for c in ['FR', 'MR', 'PR']
         }).astype('int16').reset_index().set_index('date')
-
-        df_agg.index.name = 'std'
-        # melt 써서 컬럼 변경 진행
-        
         df_agg = df_agg.reset_index()
+
         # unpivoting lounge column
-        df_agg = pd.melt(df_agg, id_vars=['date','group'], var_name='lounge_type', value_name='label')
+        df_agg = pd.melt(df_agg, id_vars=['date','time_group'], var_name='lounge_type', value_name='label')
         return df_agg
     
 if __name__=='__main__':

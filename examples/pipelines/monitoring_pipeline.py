@@ -27,6 +27,13 @@ class pipeline_monitoring:
             expire_after=self.args.config.get_value("PIPELINE", "expire_after")
         )
 
+        self.git_config = {
+            'repo' : self.args.config.get_value('GIT','git_repo'),
+            'branch' : 'master',
+            'username' : self.args.config.get_value('GIT','git_user'),
+            'password' : self.args.config.get_value('GIT','git_password'),
+        }
+
         self.pipeline_session = PipelineSession()
 
     def _step_monitoring(self):
@@ -51,7 +58,7 @@ class pipeline_monitoring:
         step_args = monitoring_processor.run(
             code='./monitoring.py',
             source_dir='./source/monitoring/',
-            # git_config=self.git_config,
+            git_config=self.git_config,
             inputs=[
                 ProcessingInput(
                     input_name='prediction-input',
