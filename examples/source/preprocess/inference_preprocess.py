@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas as pd
 
 from preprocess import Preprocess
+from config.config import config_handler
 
 class inference_preprocess(Preprocess):
 
@@ -74,9 +75,11 @@ if __name__=='__main__':
     parser.add_argument('--strDataName', default='pnr.csv')
     parser.add_argument('--strLabelName', default='lounge.csv')
     parser.add_argument('--strHoliday', default='holiday.csv')
-    parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
     parser.add_argument('--today', type=str, default='20230725')
     
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+    # get config file
+    args.config = config_handler('preprocess_config.ini')
+    
     prep = inference_preprocess(args)
     prep.execution()

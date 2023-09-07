@@ -9,7 +9,6 @@ from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.steps import CacheConfig, ProcessingStep, TransformStep
 from sagemaker.processing import ProcessingInput, ProcessingOutput, FrameworkProcessor
 from sagemaker.workflow.pipeline_context import PipelineSession
-from sagemaker.model import ModelPackage
 from sagemaker.transformer import Transformer
 
 class pipeline_inference:
@@ -45,11 +44,12 @@ class pipeline_inference:
             key=lambda model_package:model_package['ModelPackageVersion'], 
             reverse=True
         )
-        list_model_packages = [model for model in list_model_packages if model['ModelApprovalStatus']=='Approved']
-        
-        latest_model_arn = list_model_packages[0]['ModelPackageArn']
-
-        return latest_model_arn
+        for package in list_model_packages:
+            try:
+                package['ModelApprovalStatus']=='Approved'
+                return package['ModelPackageArn']
+            except:
+                continue
 
     def _step_preprocess(self):
 
@@ -138,13 +138,12 @@ class pipeline_inference:
         fr_model_grp_nm = self.args.config.get_value('FR-INFERENCING','model_package_group_name')
         fr_model_arn = self._get_approved_latest_model_package_arn(fr_model_grp_nm)
 
-        model = ModelPackage(
-            model_package_arn=fr_model_arn,
-            role=self.strExcutionRole
-        )
+        model_name = self.sagemaker_client.describe_model_package(
+            ModelPackageName=fr_model_arn
+        )["ModelPackageDescription"]
         
         transformer = Transformer(
-            model_name='fr-model-group-ex0830cns-2023-08-31-00-16-55-086',
+            model_name=model_name,
             instance_type=self.args.config.get_value('FR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('FR-INFERENCING', 'instance_count', dtype='int'),
             output_path=os.path.join(self.args.config.get_value('FR-INFERENCING','target_path'), self.args.today, 'fr'),
@@ -182,13 +181,12 @@ class pipeline_inference:
         mr_model_grp_nm = self.args.config.get_value('MR-INFERENCING','model_package_group_name')
         mr_model_arn = self._get_approved_latest_model_package_arn(mr_model_grp_nm)
 
-        model = ModelPackage(
-            model_package_arn=mr_model_arn,
-            role=self.strExcutionRole
-        )
+        model_name = self.sagemaker_client.describe_model_package(
+            ModelPackageName=mr_model_arn
+        )["ModelPackageDescription"]
         
         transformer = Transformer(
-            model_name='mr-model-group-ex0827cns-2023-08-27-12-38-15-036',
+            model_name=model_name,
             instance_type=self.args.config.get_value('MR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('MR-INFERENCING', 'instance_count', dtype='int'),
             output_path=os.path.join(self.args.config.get_value('MR-INFERENCING','target_path'), self.args.today, 'mr'),
@@ -223,16 +221,15 @@ class pipeline_inference:
         
         pipeline_session = PipelineSession()
 
-        mr_model_grp_nm = self.args.config.get_value('PR-INFERENCING','model_package_group_name')
-        mr_model_arn = self._get_approved_latest_model_package_arn(mr_model_grp_nm)
+        pr_model_grp_nm = self.args.config.get_value('PR-INFERENCING','model_package_group_name')
+        pr_model_arn = self._get_approved_latest_model_package_arn(pr_model_grp_nm)
 
-        model = ModelPackage(
-            model_package_arn=mr_model_arn,
-            role=self.strExcutionRole
-        )
+        model_name = self.sagemaker_client.describe_model_package(
+            ModelPackageName=pr_model_arn
+        )["ModelPackageDescription"]
         
         transformer = Transformer(
-            model_name='pr-model-group-ex0827cns-2023-08-27-12-45-47-010',
+            model_name=model_name,
             instance_type=self.args.config.get_value('PR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('PR-INFERENCING', 'instance_count', dtype='int'),
             output_path=os.path.join(self.args.config.get_value('PR-INFERENCING','target_path'), self.args.today, 'mr'),
@@ -329,7 +326,7 @@ class pipeline_inference:
         
         pipeline = Pipeline(
             name=self.strPipelineName,
-            steps=[self.preprocessing_process, self.fr_inference_process, self.mr_inference_process, self.pr_inference_process, self.postprocessing_process],
+            steps=[self.preprocessing_process, self.fr_inference_process],
             sagemaker_session=self.pipeline_session
         )
         return pipeline
@@ -338,9 +335,9 @@ class pipeline_inference:
         
         self._step_preprocess()
         self._step_fr_inference()
-        self._step_mr_inference()
-        self._step_pr_inference()
-        self._step_postprocess()
+        # self._step_mr_inference()
+        # self._step_pr_inference()
+        # self._step_postprocess()
 
         pipeline = self._get_pipeline()
         pipeline.upsert(role_arn=self.strExcutionRole)

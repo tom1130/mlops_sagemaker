@@ -4,7 +4,7 @@ import argparse
 import pandas as pd
 
 from preprocess import Preprocess
-
+from config.config import config_handler
 
 class pr_training_preprocess(Preprocess):
 
@@ -38,16 +38,23 @@ class pr_training_preprocess(Preprocess):
         self.logic(df, label)
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='pr_train_preprocessing')
-
+    # set path
+    strBasePath, strCurrentDir = os.path.dirname(os.path.abspath(__file__)), os.getcwd()
+    os.chdir(strBasePath)
+    # arguments
+    parser = argparse.ArgumentParser(description='fr_train_preprocessing')
+    
     parser.add_argument('--strLoungeName', default='PR')
     parser.add_argument('--strDataPath', default='/opt/ml/processing')
     parser.add_argument('--strDataName', default='pnr.csv')
     parser.add_argument('--strLabelName', default='lounge.csv')
     parser.add_argument('--strHoliday', default='holiday.csv')
-    parser.add_argument('--listYears', type=list, default=[2021,2022,2023])
+    parser.add_argument('--today', default='20230725')
     
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
+    # get config file
+    args.config = config_handler('preprocess_config.ini')
+    
     prep = pr_training_preprocess(args)
     prep.execution()
     

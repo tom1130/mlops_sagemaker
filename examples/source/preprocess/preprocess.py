@@ -1,116 +1,85 @@
 import os
-import sys
 import datetime
-import argparse
 import requests
-from typing import List, Union
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup
-from urllib.parse import unquote
-from config.config import config_handler
 
-def _get_holiday_info(year:int, month:int, hol_df:pd.DataFrame) -> pd.DataFrame:
+def _get_holiday_info(year, month, key):
     '''
-    한국천문연구원에서 휴일 정보를 호출한 후, 받아온 정보를 정제하는 함수
+    year, month에서의 holiday 정보를 가져오기
 
-    Parameters
-    ---------------
-    - year :
-        - 휴일 정보 가져오려는 연도 
-    - month : 
-        - 휴일 정보 가져오려는 달
-    - hol_df :
-        - 휴일 정보를 저장할 dataframe
-    
-    Return
-    ------------
-    pd.DataFrame
+        year : int
+        month : int
+        key : string
 
     '''
-    # APIKEY 관련 호출 방안 처리 필요 -> config 처리 예정
-    HOLIDAY_API_KEY = 'tfL4n7XV90fA7+tbWFGqShE/JokqLQxd+0I89UfkMmTYxqXPR2nmWCeAr957kAtDh2U1BNq3fh2m3S0kc9fPUA=='
     url = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getHoliDeInfo'
     params ={
-        'serviceKey' : HOLIDAY_API_KEY,
+        'serviceKey' : key,
         'solYear' : f'{year:4d}',
         'solMonth' : f'{month:02d}'
     }
     response = requests.get(url, params=params)
     
-    # bs4 작업
     soup = BeautifulSoup(response.content.decode('utf-8') , "xml")
-    # try:
+    
+    tmp_list = []
     for item in soup.items:
-        tmp_list = []
         if item.isHoliday.text == 'Y':
             hol_date = datetime.datetime.strptime(item.locdate.text, '%Y%m%d')
             hol_name = item.dateName.text
-            tmp_list.append({'hol_date' : hol_date, 'hol_name': hol_name})
-            
-        tmp_df = pd.DataFrame(tmp_list)
-        hol_df = pd.concat([hol_df, tmp_df])
-    # except:
-        # return hol_df
+            tmp_list.append([hol_date, hol_name])
+    df = pd.DataFrame(tmp_list, columns=['hol_date', 'hol_name'])
+    return df
 
+def get_holiday(hol_path, date, key):
+    '''
+    s3에 존재하는 holiday data 불러오기
+    현재 존재하는 holiday data가 현재 달과 동일하거나 작다면, holiday 데이터를 openai로부터
+    불러와 concat을 하고 hol_path에 저장
+
+        hol_path : string
+        date(today date YYYYmmdd) : string
+        key : string
+    '''
+    # read holiday data
+    hol_df = pd.read_csv(hol_path)
+    # get max holiday date for comparing with today date
+    hol_date_max = hol_df['hol_date'].max()
+    
+    date_year = datetime.datetime.strptime(date, '%Y%m%d').year
+    date_month = datetime.datetime.strptime(date, '%Y%m%d').month
+    hol_year = datetime.datetime.strptime(hol_date_max, '%Y-%m-%d').year
+    hol_month = datetime.datetime.strptime(hol_date_max, '%Y-%m-%d').month
+
+    if date_year==hol_year and date_month>=hol_month:
+        print(f'add holiday data')
+        if date_month==12:
+            hol_new_df = _get_holiday_info(date_year+1, 1, key)
+            print(f'year/month : {date_year+1}/1')
+        else:
+            hol_new_df = _get_holiday_info(date_year, date_month+1, key)
+            print(f'year/month : {date_year}/{date_month+1}')
+        hol_df = pd.concat([hol_df, hol_new_df])
+        hol_df.to_csv(hol_path, index=False)
+    
+    hol_df['hol_date'] = pd.to_datetime(hol_df['hol_date']).dt.date
+    hol_df = hol_df.set_index('hol_date')
+    print('getting holiday data is done!')
     return hol_df
-
-def get_holiday_by_year(year:Union[int, None] = None, years:Union[List[int], None] = None, hol_path:str = None) -> pd.DataFrame:
-    '''
-    특정 연도의 휴일을 pd.DataFrame으로 반환하는 함수
-    
-    year와 years 중 하나만 입력해야 하며, 모두 입력하거나 모두 입력하니 않는 경우 ValueError 발생
-
-    Parameters
-    ----------
-    - year : int
-        - 휴일 정보를 가져오려는 연도
-        - e.g. 2023
-    
-    - years : List[int]
-        - 휴일 정보를 가져오려는 연도
-        - e.g. [2023, 2024]
-
-    Returns
-    ----------
-    pd.DataFrame
-
-    '''
-    if (year is None) & (years is None):
-        raise ValueError
-
-    if isinstance(year, int) & isinstance(years, list):
-        raise ValueError
-    
-    hol_info = pd.DataFrame(columns=['hol_date', 'hol_name'])
-
-    try:
-        # year 지정시
-        if isinstance(year, int):
-            for month in range(1, 13):
-                hol_info = _get_holiday_info(year, month, hol_info)
-            hol_info = hol_info.set_index('hol_date')
-            return hol_info
-
-        # years 지정시
-        for y in years:
-            for month in range(1, 13):
-                hol_info = _get_holiday_info(y, month, hol_info)
-    except:
-        print('API Connection Error')
-        hol_info = pd.read_csv(hol_path)
-    hol_info['hol_date'] = pd.to_datetime(hol_info['hol_date']).dt.date
-    hol_info = hol_info.set_index('hol_date')
-    return hol_info
 
 class Preprocess:
 
     def __init__(self, args):
+
         self.args = args
-        self.hol_df = get_holiday_by_year(years = args.listYears,
-                                          hol_path = os.path.join(self.args.strDataPath, 'etc', self.args.strHoliday))
+        self.hol_df = get_holiday(hol_path = os.path.join(self.args.strDataPath, 'etc', self.args.strHoliday),
+                                  date = self.args.today,
+                                  key = self.args.config.get_value('PREPROCESS','holiday_api_key')
+                                  )
         self.time_group = {
             'BK' : { 'start_time' :  0 }, # 모든 시간대의 비행기 모두 BK 에 입장 가능
             'LN' : { 'start_time' : 11 }, # 11시 이후 비행기만 LN 대상에 포함 가능
@@ -147,40 +116,11 @@ class Preprocess:
         3. 지역 구분
         '''
         # svc keyword 컬럼 na -> 0
-        svc_columns = ['calf', 'calm', 'calp', 'hdcp', 'lngf', 'lngm', 'lngp', 'lngw', 'frdg', 'prdg', 'stfd', 'sss']
+        svc_columns = ['calf', 'calm', 'calp', 'hdcp', 'lngf', 'lngm', 'lngp', 'lngw', 'frdg', 'prdg', 'stfd']
         df[svc_columns] = df[svc_columns].fillna(0)
         
         # cbn_cls na -> bkg_cls로 치환
-        bkg_cls_to_cbn_cls_dict = {
-            'P' : 'F',
-            'F' : 'F',
-            'A' : 'F',
-
-            'J' : 'C',
-            'C' : 'C',
-            'D' : 'C',
-            'I' : 'C',
-            'R' : 'C',
-            'Z' : 'C',
-            'O' : 'C',
-
-            'W' : 'Y',
-            'Y' : 'Y',
-            'B' : 'Y',
-            'M' : 'Y',
-            'S' : 'Y',
-            'H' : 'Y',
-            'E' : 'Y',
-            'K' : 'Y',
-            'L' : 'Y',
-            'U' : 'Y',
-            'Q' : 'Y',
-            'G' : 'Y',
-            'N' : 'Y',
-            'T' : 'Y',
-            'X' : 'Y',
-            'V' : 'Y'
-        }
+        bkg_cls_to_cbn_cls_dict = self.args.config.get_value('PREPROCESS','bkg_cls_to_cbn_cls_dict',dtype='dict')
         cbn_cls_mask = df['bkg_cls'].map(bkg_cls_to_cbn_cls_dict)
         df.loc[:, 'cbn_cls'] = df['cbn_cls'].apply(lambda x: np.NaN if x=='~' else x).fillna(cbn_cls_mask)
 
@@ -193,8 +133,10 @@ class Preprocess:
         df['RGN_KOR'] = (df['arr_rgn'] == 'KOR')
         df['RGN_SEA'] = (df['arr_rgn'] == 'SEA')
         df['RGN_ETC'] = df['arr_rgn'].isin(['OCN', 'MEA', 'CIS'])
-
-        for cls in 'FCY':
+        
+        df['F'] = df.loc[(df['cbn_cls'] == 'F'), 'pax_count'].astype('int16')
+        
+        for cls in 'CY':
             for rgn in ['RGN_AMEEUR', 'RGN_SEA', 'RGN_CHNJPN', 'RGN_KOR', 'RGN_ETC']:
                 col_name = rgn[4:] + '_' + cls
                 df[col_name] = df.loc[((df['cbn_cls'] == cls) & df[rgn]), 'pax_count'].astype('int16')
@@ -206,19 +148,10 @@ class Preprocess:
         return df
     
     def _drop_useless_date(self, df):
-        dates = [
-            '20220513',
-            '20221002',
-            '20221003',
-            '20221104',
-            '20221105',
-            '20230111',
-            '20230112',
-            '20230113',
-            '20230114'
-        ]
+        dates = self.args.config.get_value('PREPROCESS','dates',dtype='list')
         # change to date type
-        # dates = []??
+        dates = pd.to_datetime(dates).date
+        # drop data
         df = df[~df['std'].isin(dates)]
 
         return df
@@ -249,7 +182,7 @@ class Preprocess:
 
     def _get_fr_dataset(self, df):
         # select fr columns
-        agg_cols = ['AMEEUR_F', 'lngf', 'calf', 'frdg']
+        agg_cols = ['F', 'lngf', 'calf', 'frdg']
         not_agg_cols = ['staff_bkg', 'group']
         fr = pd.DataFrame(columns=agg_cols+not_agg_cols, dtype='int16')    
 
@@ -317,7 +250,7 @@ class Preprocess:
                 'EY_MM', 'EY_MP', 'EY_ELIP',
                 'AMEEUR_Y_MC', 'SEA_Y_MC', 'CHNJPN_Y_MC', 'KOR_Y_MC', 'ETC_Y_MC', 
                 'AMEEUR_Y', 'SEA_Y', 'CHNJPN_Y', 'KOR_Y', 'ETC_Y', 
-                'calp', 'hdcp', 'lngp', 'prdg', 'sss']
+                'calp', 'hdcp', 'lngp', 'prdg']
 
         not_agg_cols = ['stfd','group']
 

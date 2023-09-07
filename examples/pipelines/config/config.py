@@ -47,19 +47,4 @@ class config_handler():
         return self.parser.has_option(strSection, strOption)
 
 if __name__ == "__main__":
-    
-    
-
-    config = config_handler()
-    
-    
-    config.set_value("ROLE", "sd", "22")
-    config.set_value("UPDATE", "new_key", "22")
-    
-    config.get_all_info()
-    
-    #inference_instances = ["ml.t2.medium", "ml.c5.4xlarge"] ## for string
-    #inference_instances = [1, 2] ## for numeric
-    
-    A = config.get_value("MODEL_REGISTER", "inference_instances_", dtype="list")
-    print (A, type(A), type(A[0]), type(A[1]))
+    pass

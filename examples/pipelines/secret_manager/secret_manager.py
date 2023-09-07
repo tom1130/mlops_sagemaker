@@ -1,16 +1,10 @@
-# Use this code snippet in your app.
-# If you need more information about configurations
-# or implementing the sample code, visit the AWS docs:
-# https://aws.amazon.com/developer/language/python/
-
 import boto3
 import json
 from botocore.exceptions import ClientError
 
-
 def get_secret():
 
-    secret_name = "{자원생성 후 재확인}"
+    secret_name = "arn:aws:secretsmanager:ap-northeast-2:993398491107:secret:git/dlk/prd/ml/bitbucket-Gz2PUy"
     region_name = "ap-northeast-2"
 
     # Create a Secrets Manager client
@@ -33,9 +27,8 @@ def get_secret():
     secret = get_secret_value_response['SecretString']
 
     # Your code goes here.
-    secret = json.dumps(secret)
+    secret = json.loads(secret)
     return secret
 
-secret = get_secret()
-git_username = secret['USER']
-git_password = secret['PASSWORD']
+if __name__=='__main__':
+    pass

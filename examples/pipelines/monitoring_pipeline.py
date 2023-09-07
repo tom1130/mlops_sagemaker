@@ -8,12 +8,15 @@ from sagemaker.workflow.steps import CacheConfig, ProcessingStep
 from sagemaker.processing import ProcessingInput, ProcessingOutput, FrameworkProcessor
 from sagemaker.workflow.pipeline_context import PipelineSession
 
+from secret_manager.secret_manager import get_secret
+
 class pipeline_monitoring:
     
     def __init__(self, args):
 
         self.args = args
-
+        # git id, password 가져오기
+        self.secret = get_secret()
         self._env_setting()
 
     def _env_setting(self):
@@ -26,12 +29,11 @@ class pipeline_monitoring:
             enable_caching=self.args.config.get_value("PIPELINE", "enable_caching", dtype="boolean"),
             expire_after=self.args.config.get_value("PIPELINE", "expire_after")
         )
-
         self.git_config = {
             'repo' : self.args.config.get_value('GIT','git_repo'),
-            'branch' : 'master',
-            'username' : self.args.config.get_value('GIT','git_user'),
-            'password' : self.args.config.get_value('GIT','git_password'),
+            'branch' : self.args.config.get_value('GIT','git_branch'),
+            'username' : self.secret['USER'].split('@')[0],
+            'password' : self.secret['PASSWORD'],
         }
 
         self.pipeline_session = PipelineSession()

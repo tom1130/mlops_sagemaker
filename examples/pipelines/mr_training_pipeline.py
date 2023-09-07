@@ -24,7 +24,7 @@ from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.processing import ProcessingInput, ProcessingOutput, FrameworkProcessor
 
 
-class pipeline_fr():
+class pipeline_mr():
     '''
     pipeline_fr과 달라진 점.
     1. Preprocessing 단계를 건너뜀(따라서 Train Step에서의 input은 Preprocessing.Properties를 사용 X)
@@ -39,14 +39,7 @@ class pipeline_fr():
         self.strRegionName = self.args.config.get_value("COMMON", "region")
         
         self.exp = True
-        self._env_setting()
-        
-        
-    def _get_datetime(self):
-        now = datetime.datetime.now(timezone('Asia/Seoul'))
-        date = now.strftime("%Y%m%d")
-        date_time = now.strftime("%Y%m%d-%H%M%S")
-        return date, date_time       
+        self._env_setting()   
         
         
     def _env_setting(self, ):
@@ -59,9 +52,6 @@ class pipeline_fr():
         self.strCodeBucketName = self.args.config.get_value("COMMON", "code_bucket")
         self.strPipelineName = self.args.config.get_value("COMMON", "pipeline_name") #"-".join([self.strPrefix, self.strModelName])
         
-        _datetime = self._get_datetime()
-        self.today = _datetime[0]
-        # self.today_time = _datetime[1]
         
         
     def _step_preprocessing(self, ):
@@ -80,7 +70,7 @@ class pipeline_fr():
         )
         
         step_preprocessing_args = prep_processor.run(
-            code = './fr_training_preprocess.py',
+            code = './mr_training_preprocess.py',
             source_dir = '../source/preprocess',
             inputs = [
                 ProcessingInput(
@@ -98,23 +88,23 @@ class pipeline_fr():
                 ProcessingOutput(
                     output_name="train-data",
                     source=os.path.join(strPrefixPrep, "output", "train"),
-                    destination=os.path.join(strTargetPath,'fr','train-data'),
+                    destination=os.path.join(strTargetPath,'mr','train-data'),
                 ),
                 ProcessingOutput(
                     output_name="validation-data",
                     source=os.path.join(strPrefixPrep, "output", "validation"),
-                    destination=os.path.join(strTargetPath,'fr','validation-data'),
+                    destination=os.path.join(strTargetPath,'mr','validation-data'),
                 ),
                 ProcessingOutput(
                     output_name="test-data",
                     source=os.path.join(strPrefixPrep, "output", "test"),
-                    destination=os.path.join(strTargetPath,'fr','test-data'),
+                    destination=os.path.join(strTargetPath,'mr','test-data'),
                 )
             ]
         )
         
         self.preprocessing_process = ProcessingStep(
-            name = "FrTrainPreprocessingProcess",
+            name = "MrTrainPreprocessingProcess",
             step_args = step_preprocessing_args,
             # cache_config = self.cache_config
         )
@@ -129,12 +119,18 @@ class pipeline_fr():
             
         print (type(self.preprocessing_process.properties))
         
+        
     def _get_pipeline(self, ):
                 
         pipeline = Pipeline(
             name=self.strPipelineName,
             steps=[
                 self.preprocessing_process, 
+                # self.training_process, 
+                # self.model_creation_process,
+                # self.batch_transform_process,
+                # self.evaluation_process, 
+                # self.model_registration_process,
             ],
             sagemaker_session=self.pipeline_session
         )
@@ -145,6 +141,11 @@ class pipeline_fr():
     def execution(self, ):
         
         self._step_preprocessing()
+        # self._step_training()
+        # self._step_model_creation()
+        # self._step_batch_transform()
+        # self._step_evaluation()
+        # self._step_model_registration()
         
         pipeline = self._get_pipeline()
         pipeline.upsert(role_arn=self.strExecutionRole)
@@ -161,10 +162,10 @@ if __name__=="__main__":
     
     parser = argparse.ArgumentParser()
     args, _ = parser.parse_known_args()
-    args.config = config_handler('fr_train_config.ini')
+    args.config = config_handler('mr_train_config.ini')
     
     print("Received arguments {}".format(args))
     os.environ['AWS_DEFAULT_REGION'] = args.config.get_value("COMMON", "region")
     
-    pipe = pipeline_fr(args)
+    pipe = pipeline_mr(args)
     pipe.execution()
