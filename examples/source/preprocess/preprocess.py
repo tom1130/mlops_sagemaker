@@ -76,7 +76,7 @@ class Preprocess:
     def __init__(self, args):
 
         self.args = args
-        self.hol_df = get_holiday(hol_path = os.path.join(self.args.strDataPath, 'etc', self.args.strHoliday),
+        self.hol_df = get_holiday(hol_path = os.path.join(self.args.data_path, 'etc', self.args.holiday_name),
                                   date = self.args.today,
                                   key = self.args.config.get_value('PREPROCESS','holiday_api_key')
                                   )
@@ -288,8 +288,8 @@ class Preprocess:
         df_cols = df.columns.tolist()
 
         df = df.merge(label, on=['std','group'], how='inner')
-        df = df[df_cols+[f'{self.args.strLoungeName}_LNG']]
-        df = df.rename(columns={f'{self.args.strLoungeName}_LNG' : 'target'})
+        df = df[df_cols+[f'{self.args.lounge_name}_LNG']]
+        df = df.rename(columns={f'{self.args.lounge_name}_LNG' : 'target'})
 
         return df
 

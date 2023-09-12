@@ -2,6 +2,8 @@ import os
 import argparse
 from pprint import pprint
 from config.config import config_handler
+from pytz import timezone
+from datetime import datetime
 
 import boto3
 from sagemaker.sklearn.estimator import SKLearn
@@ -11,25 +13,44 @@ from sagemaker.processing import ProcessingInput, ProcessingOutput, FrameworkPro
 from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.transformer import Transformer
 
-class pipeline_inference:
+from secret_manager.secret_manager import get_secret
+
+class InferencePipeline:
 
     def __init__(self, args):
         self.args = args
-
+        
+        self.secret = get_secret()
         self._env_setting()
         self.sagemaker_client = boto3.client('sagemaker')
 
     def _env_setting(self):
         
-        self.strPrefix = self.args.config.get_value('COMMON','prefix')
-        self.strExcutionRole = self.args.config.get_value("COMMON", "role")
-        self.strBucketName = self.args.config.get_value("COMMON", "bucket")
-        self.strPipelineName = self.args.config.get_value("COMMON","pipeline_name")
+        self.data_bucket = self.args.config.get_value('COMMON','data_bucket')
+        self.code_bucket = self.args.config.get_value('COMMON','code_bucket')
+        self.prefix = self.args.config.get_value('COMMON','prefix')
+        # s3://
+        self.base_path = os.path.join(
+            's3://',
+            self.data_bucket,
+            self.prefix
+        )
 
+        self.execution_role = self.args.config.get_value("COMMON","role")
+        self.pipeline_name = self.args.config.get_value("COMMON","pipeline_name")
+        self.tags = self.args.config.get_value('COMMON', 'tags', dtype='list') 
+        
         self.cache_config = CacheConfig(
             enable_caching=self.args.config.get_value("PIPELINE", "enable_caching", dtype="boolean"),
             expire_after=self.args.config.get_value("PIPELINE", "expire_after")
         )
+
+        self.git_config = {
+            'repo' : self.args.config.get_value('GIT','git_repo'),
+            'branch' : self.args.config.get_value('GIT','git_branch'),
+            'username' : self.secret['USER'].split('@')[0],
+            'password' : self.secret['PASSWORD'],
+        }
 
         self.pipeline_session = PipelineSession()
 
@@ -54,64 +75,80 @@ class pipeline_inference:
     def _step_preprocess(self):
 
         pipeline_session = PipelineSession()
-        
-        strPrefixPrep = '/opt/ml/processing'
-        strDataPath = self.args.config.get_value('PREPROCESSING', 'data_path')
-        strTargetPath = self.args.config.get_value('PREPROCESSING', 'target_path')
+        # 경로 정의
+        prefix_prep = '/opt/ml/processing'
+        data_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('PREPROCESSING', 'data_path'),
+            self.args.today
+        )
+        target_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('PREPROCESSING', 'target_path')
+        )
+        etc_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('PREPROCESSING','etc_path')
+        )
+        integrated_data_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('PREPROCESSING','integrate_data_path')
+        )
 
         prep_processor = FrameworkProcessor(
             estimator_cls=SKLearn,
             framework_version=self.args.config.get_value('PREPROCESSING','framework_version'),
-            role=self.strExcutionRole,
+            role=self.execution_role,
             instance_type=self.args.config.get_value('PREPROCESSING','instance_type'),
             instance_count=self.args.config.get_value('PREPROCESSING','instance_count', dtype='int'),
-            sagemaker_session=pipeline_session
+            sagemaker_session=pipeline_session,
+            tags=self.tags
         )
 
         step_args = prep_processor.run(
             code='./inference_preprocess.py',
-            source_dir='../source/preprocess/',
-            # git_config=self.git_config,
+            source_dir='./source/preprocess/',
+            git_config=self.git_config,
             inputs=[
                 ProcessingInput(
                     input_name='today-input',
-                    source=os.path.join(strDataPath, self.args.today),
-                    destination=os.path.join(strPrefixPrep, self.args.today, 'input')
+                    source=data_path,
+                    destination=os.path.join(prefix_prep, self.args.today, 'input')
                 ),
                 ProcessingInput(
                     input_name='holiday-input',
-                    source=self.args.config.get_value('PREPROCESSING','etc_path'),
-                    destination=os.path.join(strPrefixPrep, 'etc')
+                    source=etc_path,
+                    destination=os.path.join(prefix_prep, 'etc')
                 ),
                 ProcessingInput(
                     input_name='integrate-input',
-                    source=self.args.config.get_value('PREPROCESSING','integrate_data_path'),
-                    destination=os.path.join(strPrefixPrep, 'integrate')
+                    source=integrated_data_path,
+                    destination=os.path.join(prefix_prep, 'integrate')
                 )
             ],
             outputs=[
                 ProcessingOutput(
                     output_name='mr-inference-data',
-                    source=os.path.join(strPrefixPrep, 'output', 'mr'),
-                    destination=os.path.join(strTargetPath, self.args.today, 'mr')
+                    source=os.path.join(prefix_prep, 'output', 'mr'),
+                    destination=os.path.join(target_path, self.args.today, 'mr')
                 ),
                 ProcessingOutput(
                     output_name='fr-inference-data',
-                    source=os.path.join(strPrefixPrep, 'output', 'fr'),
-                    destination=os.path.join(strTargetPath, self.args.today, 'fr')
+                    source=os.path.join(prefix_prep, 'output', 'fr'),
+                    destination=os.path.join(target_path, self.args.today, 'fr')
                 ),
                 ProcessingOutput(
                     output_name='pr-inference-data',
-                    source=os.path.join(strPrefixPrep, 'output', 'pr'),
-                    destination=os.path.join(strTargetPath, self.args.today, 'pr')
+                    source=os.path.join(prefix_prep, 'output', 'pr'),
+                    destination=os.path.join(target_path, self.args.today, 'pr')
                 ),
                 ProcessingOutput(
                     output_name='integrated-data',
-                    source=os.path.join(strPrefixPrep, 'output', 'integrate'),
-                    destination=self.args.config.get_value('PREPROCESSING','integrate_data_path')
+                    source=os.path.join(prefix_prep, 'output', 'integrate'),
+                    destination=integrated_data_path
                 )
             ],
-            # arguments=[],
+            arguments=['--today', self.args.today],
             job_name='inference_preprocessing'
         )
 
@@ -142,14 +179,36 @@ class pipeline_inference:
             ModelPackageName=fr_model_arn
         )["ModelPackageDescription"]
         
+
+        # boto3가 아니라, SageMaker AutoML을 활용해 학습했을 경우의 model_name 불러오는 방법 : 아래의 코드를 주석 해제하고 코드 실행
+        '''
+        model_name_prefix = self.sagemaker_client.describe_model_package(
+            ModelPackageName=fr_model_arn
+        )["ModelPackageDescription"]
+
+        model_name = sagemaker_client.list_models(
+            SortBy="CreationTime",
+            SortOrder="Descending",
+            NameContains=model_name_prefix,
+            MaxResults=1,
+        )['Models'][0]['ModelName']
+        '''
+        target_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('FR-INFERENCING','target_path'),
+            self.args.today,
+            'fr'
+        )
+
         transformer = Transformer(
             model_name=model_name,
             instance_type=self.args.config.get_value('FR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('FR-INFERENCING', 'instance_count', dtype='int'),
-            output_path=os.path.join(self.args.config.get_value('FR-INFERENCING','target_path'), self.args.today, 'fr'),
+            output_path=target_path,
             assemble_with='Line',
             accept='text/csv',
-            sagemaker_session=pipeline_session
+            sagemaker_session=pipeline_session,
+            tags=self.tags
         )
 
         step_args = transformer.transform(
@@ -185,14 +244,22 @@ class pipeline_inference:
             ModelPackageName=mr_model_arn
         )["ModelPackageDescription"]
         
+        target_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('MR-INFERENCING','target_path'),
+            self.args.today,
+            'mr'
+        )
+
         transformer = Transformer(
             model_name=model_name,
             instance_type=self.args.config.get_value('MR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('MR-INFERENCING', 'instance_count', dtype='int'),
-            output_path=os.path.join(self.args.config.get_value('MR-INFERENCING','target_path'), self.args.today, 'mr'),
+            output_path=target_path,
             assemble_with='Line',
             accept='text/csv',
-            sagemaker_session=pipeline_session
+            sagemaker_session=pipeline_session,
+            tags=self.tags
         )
 
         step_args = transformer.transform(
@@ -228,14 +295,22 @@ class pipeline_inference:
             ModelPackageName=pr_model_arn
         )["ModelPackageDescription"]
         
+        target_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('PR-INFERENCING','target_path'),
+            self.args.today,
+            'pr'
+        )
+
         transformer = Transformer(
             model_name=model_name,
             instance_type=self.args.config.get_value('PR-INFERENCING', 'instance_type'),
             instance_count=self.args.config.get_value('PR-INFERENCING', 'instance_count', dtype='int'),
-            output_path=os.path.join(self.args.config.get_value('PR-INFERENCING','target_path'), self.args.today, 'mr'),
+            output_path=target_path,
             assemble_with='Line',
             accept='text/csv',
-            sagemaker_session=pipeline_session
+            sagemaker_session=pipeline_session,
+            tags=self.tags
         )
 
         step_args = transformer.transform(
@@ -264,44 +339,49 @@ class pipeline_inference:
         
         pipeline_session = PipelineSession()
 
-        strPrefixPrep = '/opt/ml/processing'
-        strDataPath = self.args.config.get_value('POSTPROCESSING','data_path')
-        strTargetPath = self.args.config.get_value('POSTPROCESSING','target_path')
+        prefix_prep = '/opt/ml/processing'
+        target_path = os.path.join(
+            self.base_path,
+            self.args.config.get_value('POSTPROCESSING','target_path'),
+            self.args.today
+        )
 
         post_processor = FrameworkProcessor(
             estimator_cls=SKLearn,
             framework_version=self.args.config.get_value('POSTPROCESSING','framework_version'),
-            role=self.strExcutionRole,
+            role=self.execution_role,
             instance_type=self.args.config.get_value('POSTPROCESSING','instance_type'),
             instance_count=self.args.config.get_value('POSTPROCESSING','instance_count', dtype='int'),
-            sagemaker_session=pipeline_session
+            sagemaker_session=pipeline_session,
+            tags=self.tags
         )
 
         step_args = post_processor.run(
             code='./postprocess.py',
-            source_dir='../source/postprocess/',
+            source_dir='./source/postprocess/',
+            git_config=self.git_config,
             inputs=[
                 ProcessingInput(
                     input_name='fr-input',
                     source=self.fr_inference_process.properties.TransformOutput.S3OutputPath,
-                    destination=os.path.join(strPrefixPrep, 'input', 'fr')
+                    destination=os.path.join(prefix_prep, 'input', 'fr')
                 ),
                 ProcessingInput(
                     input_name='mr-input',
                     source=self.mr_inference_process.properties.TransformOutput.S3OutputPath,
-                    destination=os.path.join(strPrefixPrep, 'input', 'mr')
+                    destination=os.path.join(prefix_prep, 'input', 'mr')
                 ),
                 ProcessingInput(
                     input_name='pr-input',
                     source=self.pr_inference_process.properties.TransformOutput.S3OutputPath,
-                    destination=os.path.join(strPrefixPrep, 'input', 'pr')
+                    destination=os.path.join(prefix_prep, 'input', 'pr')
                 )
             ],
             outputs=[
                 ProcessingOutput(
                     output_name="output",
-                    source=os.path.join(strPrefixPrep, "output"),
-                    destination=os.path.join(strTargetPath, self.args.today),
+                    source=os.path.join(prefix_prep, "output"),
+                    destination=target_path,
                 ),
             ]
         )
@@ -313,7 +393,7 @@ class pipeline_inference:
         )
 
         ## logging ##########
-        print("  \n== Preprocessing Step ==")
+        print("  \n== Postprocessing Step ==")
         print("   \nArgs: ")
         for key, value in self.postprocessing_process.arguments.items():
             print("===========================")
@@ -325,8 +405,8 @@ class pipeline_inference:
     def _get_pipeline(self):
         
         pipeline = Pipeline(
-            name=self.strPipelineName,
-            steps=[self.preprocessing_process, self.fr_inference_process],
+            name=self.pipeline_name,
+            steps=[self.preprocessing_process, self.fr_inference_process, self.mr_inference_process, self.pr_inference_process, self.postprocessing_process],
             sagemaker_session=self.pipeline_session
         )
         return pipeline
@@ -335,12 +415,12 @@ class pipeline_inference:
         
         self._step_preprocess()
         self._step_fr_inference()
-        # self._step_mr_inference()
-        # self._step_pr_inference()
-        # self._step_postprocess()
+        self._step_mr_inference()
+        self._step_pr_inference()
+        self._step_postprocess()
 
         pipeline = self._get_pipeline()
-        pipeline.upsert(role_arn=self.strExcutionRole)
+        pipeline.upsert(role_arn=self.execution_role)
         execution = pipeline.start()
 
         print(execution.describe)
@@ -348,12 +428,17 @@ class pipeline_inference:
 if __name__=='__main__':
     strBasePath, strCurrentDir = os.path.dirname(os.path.abspath(__file__)), os.getcwd()
     os.chdir(strBasePath)
+    # get today date
+    today = datetime.strftime(datetime.now(timezone('Asia/Seoul')), '%Y%m%d')
+
     # get config and argument
     parser = argparse.ArgumentParser()
-    parser.add_argument('--today', default='20230725')
+    parser.add_argument('--today', default=today)
     args, _ = parser.parse_known_args()
-    args.config = config_handler('inference_config.ini')
+
+    # args.config = config_handler('prd_inference_config.ini')
+    args.config = config_handler('dev_inference_config.ini')
 
     # execute monitoring pipeline
-    pipe_monitor = pipeline_inference(args)
+    pipe_monitor = InferencePipeline(args)
     pipe_monitor.execution()

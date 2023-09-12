@@ -25,16 +25,16 @@ class fr_training_preprocess(Preprocess):
         train, validation, test = self._train_test_split(df)        
 
         # save train, valid, test
-        train_path = os.path.join(self.args.strDataPath, 'output','train','pnr.csv')
-        validation_path = os.path.join(self.args.strDataPath, 'output','validation','pnr.csv')
-        test_path = os.path.join(self.args.strDataPath, 'output','test','pnr.csv')
+        train_path = os.path.join(self.args.data_path, 'output','train','pnr.csv')
+        validation_path = os.path.join(self.args.data_path, 'output','validation','pnr.csv')
+        test_path = os.path.join(self.args.data_path, 'output','test','pnr.csv')
         train.to_csv(train_path, index=False)
         validation.to_csv(validation_path, index=False)
         test.to_csv(test_path, index=False)
 
     def execution(self):
-        df = pd.read_csv(os.path.join(self.args.strDataPath, 'input', self.args.strDataName))
-        label = pd.read_csv(os.path.join(self.args.strDataPath, 'input', self.args.strLabelName))
+        df = pd.read_csv(os.path.join(self.args.data_path, 'input', self.args.data_name))
+        label = pd.read_csv(os.path.join(self.args.data_path, 'input', self.args.label_name))
         label = self._preprocess_label(label)
         
 
@@ -48,11 +48,11 @@ if __name__=='__main__':
     # arguments
     parser = argparse.ArgumentParser(description='fr_train_preprocessing')
     
-    parser.add_argument('--strLoungeName', default='FR')
-    parser.add_argument('--strDataPath', default='/opt/ml/processing')
-    parser.add_argument('--strDataName', default='pnr.csv')
-    parser.add_argument('--strLabelName', default='lounge.csv')
-    parser.add_argument('--strHoliday', default='holiday.csv')
+    parser.add_argument('--lounge_name', default='FR')
+    parser.add_argument('--data_path', default='/opt/ml/processing')
+    parser.add_argument('--data_name', default='pnr.csv')
+    parser.add_argument('--label_name', default='lounge.csv')
+    parser.add_argument('--holiday_name', default='holiday.csv')
     parser.add_argument('--today', default='20230725')
     
     args, _ = parser.parse_known_args()

@@ -32,13 +32,13 @@ class Postprocess:
         self.result = self.result[['date','lounge_type','time_group','pred']]
 
         # save
-        self.result.to_csv(os.path.join(self.args.strDataPath, 'output', 'pnr.csv'), index=False)
+        self.result.to_csv(os.path.join(self.args.data_path, 'output', 'pnr.csv'), index=False)
 
     def execution(self):
         # define file path
-        fr_path = os.path.join(self.args.strDataPath, 'input', 'fr', self.args.strDataName)
-        mr_path = os.path.join(self.args.strDataPath, 'input', 'mr', self.args.strDataName)
-        pr_path = os.path.join(self.args.strDataPath, 'input', 'pr', self.args.strDataName)
+        fr_path = os.path.join(self.args.data_path, 'input', 'fr', self.args.data_name)
+        mr_path = os.path.join(self.args.data_path, 'input', 'mr', self.args.data_name)
+        pr_path = os.path.join(self.args.data_path, 'input', 'pr', self.args.data_name)
         # read file
         self.fr_result = pd.read_csv(fr_path, header=None)
         self.mr_result = pd.read_csv(mr_path, header=None)
@@ -54,8 +54,8 @@ class Postprocess:
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='inference-postprocess')
 
-    parser.add_argument('--strDataPath', default='/opt/ml/processing')
-    parser.add_argument('--strDataName', default='pnr.csv.out')
+    parser.add_argument('--data_path', default='/opt/ml/processing')
+    parser.add_argument('--data_name', default='pnr.csv.out')
 
     args = parser.parse_args()
     postp = Postprocess(args)
