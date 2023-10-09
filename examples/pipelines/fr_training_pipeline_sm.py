@@ -17,14 +17,13 @@ from sagemaker.workflow.model_step import ModelStep
 from sagemaker.workflow.automl_step import AutoMLStep
 from sagemaker.workflow.steps import ProcessingStep, TransformStep
 from sagemaker.workflow.pipeline_context import PipelineSession
+from sagemaker.workflow.functions import Join
 from sagemaker.processing import ProcessingInput, ProcessingOutput, FrameworkProcessor
+from sagemaker.workflow.parameters import ParameterString
 
-from secret_manager.secret_manager import get_secret
+from utils.secret_manager import get_secret
 
-'''
-0911_1636: Preprocess 제외하고 Training부터 테스트하였음
-         : Step간 경로 Properties로 받게끔 수정필요함
-'''
+
 class FrTrainingPipelineSM():
     '''
     SageMaker SDK 활용하여, Step 정의 및 pipeline 생성
@@ -43,14 +42,23 @@ class FrTrainingPipelineSM():
         self.pipeline_session = PipelineSession()
         self.execution_role = self.args.config.get_value("COMMON", "role")
         self.pipeline_name = self.args.config.get_value("COMMON", "pipeline_name") 
-        self.today = self.args.today
-        self.now = datetime.now(timezone("Asia/Seoul")).strftime("%H%M%S")
+
+        self.today = ParameterString(
+            name="today",
+            default_value=datetime.now(timezone("Asia/Seoul")).strftime("%Y%m%d"),
+        )
+
+        self.now = ParameterString(
+            name="now",
+            default_value=datetime.now(timezone("Asia/Seoul")).strftime("%H%M%S")
+        )
+
         self.tags = ast.literal_eval(self.args.config.get_value("COMMON", "tags"))
         self.lounge_name = self.args.config.get_value("COMMON", "lounge_name")
         self.data_bucket = self.args.config.get_value('COMMON','data_bucket')
         self.code_bucket = self.args.config.get_value('COMMON','code_bucket')
         self.prefix = self.args.config.get_value('COMMON','prefix')
-        # s3://
+
         self.data_base_path = os.path.join(
             's3://',
             self.data_bucket,
@@ -95,6 +103,7 @@ class FrTrainingPipelineSM():
             instance_type=self.args.config.get_value("PREPROCESSING", "instance_type"),
             instance_count=self.args.config.get_value("PREPROCESSING", "instance_count", dtype='int'),
             sagemaker_session=self.pipeline_session,
+            tags=self.tags
         )
         
         step_preprocessing_args = prep_processor.run(
@@ -129,13 +138,18 @@ class FrTrainingPipelineSM():
                     source=os.path.join(prefix_prep, "output", "test"),
                     destination=os.path.join(target_path,'fr','test-data'),
                 )
+            ],
+            arguments=[
+                '--region', self.args.config.get_value("COMMON", "region"),
+                '--sns_arn', self.args.config.get_value("SNS", "arn"),
+                '--project_name', self.args.config.get_value("COMMON", "project_name"),
+                '--pipeline_name', self.args.config.get_value("COMMON", "pipeline_name"),
             ]
         )
         
         self.preprocessing_process = ProcessingStep(
             name = "FrTrainPreprocessingProcess",
             step_args = step_preprocessing_args,
-            # cache_config = self.cache_config
         )
 
         ## logging ##########
@@ -147,27 +161,26 @@ class FrTrainingPipelineSM():
             pprint(value)
             
         print (type(self.preprocessing_process.properties))
-        
-        
-        
-    '''
-    TEST : Preprocessing 없이 training부터 진행
-         : paramAutoMLTrain, paramAutoMLValid의 inputs 값을 properties로 수정 필요
-    '''
+
+
+
     def _step_training(self, ):
         
         target_attribute = self.args.config.get_value("TRAINING", "target_attribute")
-        model_output_path = os.path.join(
-            self.code_base_path,
-            self.today,
-            "model"
+        model_output_path = Join(
+            on='/',
+            values=[
+                self.code_base_path,
+                self.today,
+                "model"
+            ]
         )
         
         paramAutoMLTrain = AutoMLInput(
             channel_type = "training",
             content_type = "text/csv;header=present",
             compression = None,
-            inputs = "s3://awsdc-s3-dlk-dev-ml/tmp/lounge_2/train/preprocess/fr/train-data/pnr.csv", # self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["train-data"].S3Output.S3Uri,
+            inputs = self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["train-data"].S3Output.S3Uri,
             target_attribute_name = target_attribute,
             s3_data_type = "S3Prefix",
         )
@@ -176,7 +189,7 @@ class FrTrainingPipelineSM():
             channel_type = "validation",
             content_type = "text/csv;header=present",
             compression = None,
-            inputs = "s3://awsdc-s3-dlk-dev-ml/tmp/lounge_2/train/preprocess/fr/validation-data/pnr.csv", # self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["validation-data"].S3Output.S3Uri,
+            inputs = self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["validation-data"].S3Output.S3Uri,
             target_attribute_name = target_attribute,
             s3_data_type = "S3Prefix",
         )
@@ -230,13 +243,8 @@ class FrTrainingPipelineSM():
             sagemaker_session=self.pipeline_session,
         )
         
-        print("In Model Creation Step")
-        print("Default model name :", self.best_auto_ml_model.name)
-        
-        model_name = self.lounge_name + "-sm-auto-ml-" + self.today + "-" + self.now
+        model_name = "sag-dev-ml-lng-fr-model-smsdk"
         self.best_auto_ml_model.name = model_name
-        
-        print("Changed model name :", self.best_auto_ml_model.name)
         
         step_model_creation_args = self.best_auto_ml_model.create(
             instance_type = self.args.config.get_value("MODEL_CREATION", "instance_type"),
@@ -248,20 +256,21 @@ class FrTrainingPipelineSM():
             step_args = step_model_creation_args,
         )
         
-        print('## Model Creation Step Created')
+        ## logging ##########
+        print("  \n== ModelCreate Step Completed==")
 
     
-    '''
-    TEST : Preprocessing 없이 training부터 진행
-         : transform 메소드의 data 에서 data경로를 properties로 수정 필요
-    '''
+
     def _step_batch_transform(self, ):
 
-        eval_output_path = os.path.join(
-            self.data_base_path,
-            "train/evaluation",
-            self.lounge_name,
-            self.today
+        eval_output_path = Join(
+            on='/',
+            values=[
+                self.code_base_path,
+                "evaluation",
+                self.lounge_name,
+                self.today
+            ]
         )
 
         self.transformer = Transformer(
@@ -275,7 +284,13 @@ class FrTrainingPipelineSM():
         )
         
         step_batch_transform_args = self.transformer.transform(
-            data = f"s3://awsdc-s3-dlk-dev-ml/tmp/lounge_2/train/preprocess/{self.lounge_name}/test-data/pnr_drop_target.csv", # 수정필요
+            data = Join(
+                on='/',
+                values=[
+                    self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["test-data"].S3Output.S3Uri,
+                    'pnr.csv'
+                ]
+            ),     
             content_type = "text/csv",
             split_type="Line",
         )
@@ -285,16 +300,27 @@ class FrTrainingPipelineSM():
             step_args = step_batch_transform_args,
         )
 
-        print('## Batch Transform Step Created')
+        ## logging ##########
+        print("  \n== Batch Transform Step ==")
+        print("   \nArgs: ")
+        for key, value in self.batch_transform_process.arguments.items():
+            print("===========================")
+            print(f'key: {key}')
+            pprint(value)
+            
+        print (type(self.batch_transform_process.properties))
         
         
     def _step_evaluation(self, ):
 
-        eval_output_path = os.path.join(
-            self.data_base_path,
-            "train/evaluation",
-            self.lounge_name,
-            self.today
+        eval_output_path = Join(
+            on='/',
+            values=[
+                self.data_base_path,
+                "train/evaluation",
+                self.lounge_name,
+                self.today
+            ]
         )
 
         self.eval_processor = FrameworkProcessor(
@@ -318,7 +344,13 @@ class FrTrainingPipelineSM():
                 ),
                 ProcessingInput(
                     input_name="test-data-evaluation",
-                    source=f"s3://awsdc-s3-dlk-dev-ml/tmp/lounge_2/train/preprocess/{self.lounge_name}/test-data/pnr_target.csv", 
+                    source=Join(
+                        on='/',
+                        values=[
+                            self.preprocessing_process.properties.ProcessingOutputConfig.Outputs["test-data"].S3Output.S3Uri,
+                            'lounge.csv'
+                        ]
+                    ), 
                     destination="/opt/ml/processing/input/test_data",
                 ),
             ],
@@ -336,7 +368,15 @@ class FrTrainingPipelineSM():
             step_args=step_evaluation_args,
         )
         
-        print('## Evaluation Step Created')
+        ## logging ##########
+        print("  \n== Evaluation Step ==")
+        print("   \nArgs: ")
+        for key, value in self.evaluation_process.arguments.items():
+            print("===========================")
+            print(f'key: {key}')
+            pprint(value)
+            
+        print (type(self.evaluation_process.properties))
         
     
     def _step_model_registration(self, ):
@@ -344,10 +384,6 @@ class FrTrainingPipelineSM():
         model_metrics = ModelMetrics(
             model_statistics=MetricsSource(
                 s3_uri=self.evaluation_process.properties.ProcessingOutputConfig.Outputs["evaluation-metrics"].S3Output.S3Uri,
-                # os.path.join(
-                #     self.evaluation_process.properties.ProcessingOutputConfig.Outputs["evaluation-metrics"].S3Output.S3Uri,
-                #     "evaluation_metrics.json",
-                # ),
                 content_type="application/json", 
             )
         )
@@ -370,6 +406,9 @@ class FrTrainingPipelineSM():
             step_args=step_model_registration_args,
         )
         
+        ## logging ##########
+        print("  \n== ModelRegistration Step Completed==")
+
 
         
     def _get_pipeline(self, ):
@@ -377,7 +416,7 @@ class FrTrainingPipelineSM():
         pipeline = Pipeline(
             name=self.pipeline_name,
             steps=[
-                # self.preprocessing_process, 
+                self.preprocessing_process, 
                 self.training_process, 
                 self.model_creation_process,
                 self.batch_transform_process,
@@ -385,6 +424,7 @@ class FrTrainingPipelineSM():
                 self.model_registration_process,
             ],
             sagemaker_session=self.pipeline_session,
+            parameters=[self.today, self.now],
             pipeline_definition_config=PipelineDefinitionConfig(use_custom_job_prefix=True), # 자동으로 AutoMLJobName, ModelName Override 되는 것 방지
         )
     
@@ -393,7 +433,7 @@ class FrTrainingPipelineSM():
         
     def execution(self, ):
         
-        # self._step_preprocessing()
+        self._step_preprocessing()
         self._step_training()
         self._step_model_creation()
         self._step_batch_transform()
@@ -405,8 +445,6 @@ class FrTrainingPipelineSM():
         execution = pipeline.start()
         desc = execution.describe()
         
-        print("In Execution Part")
-        print("Model Name in Model Creation Step : ", self.best_auto_ml_model.name)
         print(desc)
     
     

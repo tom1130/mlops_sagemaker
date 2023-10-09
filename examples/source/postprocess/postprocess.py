@@ -1,7 +1,12 @@
 import os
 import argparse
+import boto3
 
 import pandas as pd
+from datetime import datetime
+from pytz import timezone
+
+from utils.notification import *
 
 class Postprocess:
 
@@ -45,18 +50,40 @@ class Postprocess:
         self.pr_result = pd.read_csv(pr_path, header=None)
 
         self.logic()
+        print('Postprocess is completed')
 
     def _find_grp_columns(self, df):
         for column in df.columns:
-            if df[column].unique().tolist()==['BK','LN','DN']:
+            if set(df[column].unique().tolist())==set(['BK','LN','DN']):
                 return column
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser(description='inference-postprocess')
+    try:
+        parser = argparse.ArgumentParser(description='inference-postprocess')
 
-    parser.add_argument('--data_path', default='/opt/ml/processing')
-    parser.add_argument('--data_name', default='pnr.csv.out')
+        parser.add_argument('--data_path', default='/opt/ml/processing')
+        parser.add_argument('--data_name', default='pnr.csv.out')
+        parser.add_argument('--region', type=str, default="ap-northeast-2")
+        parser.add_argument('--sns_arn', default='arn:aws:sns:ap-northeast-2:441848216151:awsdc-sns-dlk-dev-topic-ml-2023p01-lounge')
+        parser.add_argument('--project_name', type=str)
+        parser.add_argument('--pipeline_name', type=str)
 
-    args = parser.parse_args()
-    postp = Postprocess(args)
-    postp.execution()
+        parser.add_argument('--env', type=str)
+
+        args = parser.parse_args()
+        postp = Postprocess(args)
+        postp.execution()
+
+    except Exception as e:
+
+        publish_sns(
+            region_name=args.region,
+            sns_arn=args.sns_arn,
+            project_name=args.project_name,
+            pipeline_name=args.pipeline_name,
+            error_type="Inference Postprocessing Step 실행 중 에러",
+            error_message=e,
+            env=args.env,
+        )
+
+        raise Exception('step error')

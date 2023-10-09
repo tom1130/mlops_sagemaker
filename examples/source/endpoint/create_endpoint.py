@@ -47,10 +47,10 @@ class Deploy():
         )
         for package in list_model_packages:
             try:
-                package['ModelApprovalStatus']=='Approved'
-                return package['ModelPackageArn']
+                if package['ModelApprovalStatus']=='Approved':
+                    return package['ModelPackageArn']
             except:
-                continue
+                continue    
                 
                 
     def _get_old_endpoint_name(self):

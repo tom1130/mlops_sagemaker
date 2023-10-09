@@ -1,85 +1,13 @@
-import os
-import datetime
-import requests
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
 import numpy as np
-from bs4 import BeautifulSoup
-
-def _get_holiday_info(year, month, key):
-    '''
-    year, month에서의 holiday 정보를 가져오기
-
-        year : int
-        month : int
-        key : string
-
-    '''
-    url = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getHoliDeInfo'
-    params ={
-        'serviceKey' : key,
-        'solYear' : f'{year:4d}',
-        'solMonth' : f'{month:02d}'
-    }
-    response = requests.get(url, params=params)
-    
-    soup = BeautifulSoup(response.content.decode('utf-8') , "xml")
-    
-    tmp_list = []
-    for item in soup.items:
-        if item.isHoliday.text == 'Y':
-            hol_date = datetime.datetime.strptime(item.locdate.text, '%Y%m%d')
-            hol_name = item.dateName.text
-            tmp_list.append([hol_date, hol_name])
-    df = pd.DataFrame(tmp_list, columns=['hol_date', 'hol_name'])
-    return df
-
-def get_holiday(hol_path, date, key):
-    '''
-    s3에 존재하는 holiday data 불러오기
-    현재 존재하는 holiday data가 현재 달과 동일하거나 작다면, holiday 데이터를 openai로부터
-    불러와 concat을 하고 hol_path에 저장
-
-        hol_path : string
-        date(today date YYYYmmdd) : string
-        key : string
-    '''
-    # read holiday data
-    hol_df = pd.read_csv(hol_path)
-    # get max holiday date for comparing with today date
-    hol_date_max = hol_df['hol_date'].max()
-    
-    date_year = datetime.datetime.strptime(date, '%Y%m%d').year
-    date_month = datetime.datetime.strptime(date, '%Y%m%d').month
-    hol_year = datetime.datetime.strptime(hol_date_max, '%Y-%m-%d').year
-    hol_month = datetime.datetime.strptime(hol_date_max, '%Y-%m-%d').month
-
-    if date_year==hol_year and date_month>=hol_month:
-        print(f'add holiday data')
-        if date_month==12:
-            hol_new_df = _get_holiday_info(date_year+1, 1, key)
-            print(f'year/month : {date_year+1}/1')
-        else:
-            hol_new_df = _get_holiday_info(date_year, date_month+1, key)
-            print(f'year/month : {date_year}/{date_month+1}')
-        hol_df = pd.concat([hol_df, hol_new_df])
-        hol_df.to_csv(hol_path, index=False)
-    
-    hol_df['hol_date'] = pd.to_datetime(hol_df['hol_date']).dt.date
-    hol_df = hol_df.set_index('hol_date')
-    print('getting holiday data is done!')
-    return hol_df
 
 class Preprocess:
 
     def __init__(self, args):
 
         self.args = args
-        self.hol_df = get_holiday(hol_path = os.path.join(self.args.data_path, 'etc', self.args.holiday_name),
-                                  date = self.args.today,
-                                  key = self.args.config.get_value('PREPROCESS','holiday_api_key')
-                                  )
         self.time_group = {
             'BK' : { 'start_time' :  0 }, # 모든 시간대의 비행기 모두 BK 에 입장 가능
             'LN' : { 'start_time' : 11 }, # 11시 이후 비행기만 LN 대상에 포함 가능
@@ -93,6 +21,9 @@ class Preprocess:
         pass
         
     def _preprocess_label(self, df):
+        '''
+        label data 전처리(unbound data -> bound data로 aggregation)
+        '''
         df['std'] = pd.to_datetime(df['_date']).dt.date
         
         df['FR_LNG'] = df.loc[(df['lng_type'] == 'FR'), 'ke'].astype('int16')
@@ -145,9 +76,13 @@ class Preprocess:
         df['MP'] = (df['ffp_ke'] == 'MP')
         df['MC'] = (df['ffp_ke'] == 'MC')
 
+        print('transform base data is completed')
         return df
     
     def _drop_useless_date(self, df):
+        '''
+        필요시, 잘못 생성된 데이터 등, 학습에 방해되는 데이터 제거
+        '''
         dates = self.args.config.get_value('PREPROCESS','dates',dtype='list')
         # change to date type
         dates = pd.to_datetime(dates).date
@@ -157,6 +92,9 @@ class Preprocess:
         return df
 
     def _make_mr_features(self, df):
+        '''
+        mr과 관련된 feature를 생성
+        '''
         df['ELIP'] = (df['ffp_skyteam'] == 'ELIP')
 
         isJC = df['bkg_cls'].isin(['J', 'C'])
@@ -167,9 +105,13 @@ class Preprocess:
         df['MM_PR'] = df.loc[df['MM'] & (df['cbn_cls'] == 'C'), 'pax_count'].astype('int16')
         df['MP_PR'] = df.loc[df['MP'] & (df['cbn_cls'] == 'C'), 'pax_count'].astype('int16')
 
+        print('Making mr features is completed')
         return df
 
     def _make_pr_features(self, df):
+        '''
+        pr과 관련된 feature를 생성
+        '''
         df['EY_MM'] = df['MM'] & (df['cbn_cls'] == 'Y')
         df['EY_MP'] = df['MP'] & (df['cbn_cls'] == 'Y')
         df['EY_ELIP'] = (df['ffp_skyteam'] == 'ELIP') & (~df['MM']) & (~df['MP']) & (df['cbn_cls'] == 'Y')
@@ -178,9 +120,13 @@ class Preprocess:
             orgn_col = new_col[:-3]
             df[new_col] = df.loc[df[orgn_col].astype(bool) & df['MC'], 'pax_count']
 
+        print('Making pr features is completed')
         return df
 
     def _get_fr_dataset(self, df):
+        '''
+        fr dataset 생성
+        '''
         # select fr columns
         agg_cols = ['F', 'lngf', 'calf', 'frdg']
         not_agg_cols = ['staff_bkg', 'group']
@@ -219,9 +165,13 @@ class Preprocess:
         fr['is_holiday'] = fr.index.isin(self.hol_df.index).astype('int16')
         fr = fr.reset_index()
 
+        print('Getting fr features is completed')
         return fr
     
     def _get_mr_dataset(self, df):
+        '''
+        mr dataset 생성
+        '''
         # select mr columns
         agg_cols = ['JC_AMEEUR', 'MM_PR', 'MP_PR', 'calm', 'lngm']
         not_agg_cols = ['group']
@@ -243,9 +193,13 @@ class Preprocess:
         mr['is_holiday'] = mr.index.isin(self.hol_df.index).astype('int16')
         mr = mr.reset_index()
 
+        print('Getting mr features is completed')
         return mr
 
     def _get_pr_dataset(self, df):
+        '''
+        pr dataset 생성
+        '''
         agg_cols = ['AMEEUR_C', 'SEA_C', 'CHNJPN_C', 'KOR_C', 'ETC_C',
                 'EY_MM', 'EY_MP', 'EY_ELIP',
                 'AMEEUR_Y_MC', 'SEA_Y_MC', 'CHNJPN_Y_MC', 'KOR_Y_MC', 'ETC_Y_MC', 
@@ -282,26 +236,39 @@ class Preprocess:
         pr['is_holiday'] = pr.index.isin(self.hol_df.index).astype('int16')
         pr = pr.reset_index()
 
+        print('Getting pr features is completed')
         return pr
     
     def _merge_data_label(self, df, label):
+        '''
+        전처리된 변수 데이터와 라벨 데이터를 join
+        '''
         df_cols = df.columns.tolist()
 
         df = df.merge(label, on=['std','group'], how='inner')
         df = df[df_cols+[f'{self.args.lounge_name}_LNG']]
         df = df.rename(columns={f'{self.args.lounge_name}_LNG' : 'target'})
 
+        print('Merging data and label is completed')
         return df
 
     def _train_test_split(self, df):
+        '''
+        merge된 데이터를 train, valid, test로 split
+        - train data : 이전 30개월 ~ 2개월
+        - valid data : 이전 2개월 ~ 1개월
+        - test data : 이전 1개월 ~ 현재
+        '''
+        # 최근 날짜 반환
         max_date = df['std'].max()
         valid_date = max_date - relativedelta(months=2)
         test_date = max_date - relativedelta(months=1)
-
+        # data split
         train = df[df['std']<valid_date]
         validation = df[(df['std']>=valid_date)&(df['std']<test_date)]
         test = df[df['std']>=test_date]
 
+        print('Spliting data is completed')
         return train, validation, test
 
 if __name__=='__main__':

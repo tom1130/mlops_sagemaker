@@ -12,7 +12,7 @@ from sagemaker.workflow.steps import ProcessingStep
 from sagemaker.processing import ProcessingInput, ProcessingOutput, FrameworkProcessor
 from sagemaker.workflow.pipeline_context import PipelineSession
 
-from secret_manager.secret_manager import get_secret
+from utils.secret_manager import get_secret
 
 
 class ModelEndpointPipeline():
